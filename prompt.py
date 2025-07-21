@@ -3,7 +3,16 @@ import pandas as pd
 import openai
 import time
 import os
-from audiorecorder import audiorecorder
+
+try:
+    from st_audiorec import st_audiorec
+    AUDIO_RECORDER_AVAILABLE = True
+except ImportError:
+    try:
+        from streamlit_audio_recorder import audio_recorder
+        AUDIO_RECORDER_AVAILABLE = True
+    except ImportError:
+        AUDIO_RECORDER_AVAILABLE = False
 
 # OpenAI API 키를 Streamlit Secrets에서 가져오기
 try:
@@ -296,28 +305,75 @@ def main():
         st.subheader("🎤 음성 입력")
         st.markdown("**iPad 및 모바일 지원**")
         
-        # 오디오 녹음기
-        audio = audiorecorder("🎤 녹음 시작", "🔴 녹음 중...")
-        
-        if len(audio) > 0:
-            # 오디오 플레이어 표시
-            st.audio(audio.export().read())
+        if not AUDIO_RECORDER_AVAILABLE:
+            st.error("⚠️ 오디오 녹음 패키지가 설치되지 않았습니다.")
+            st.info("수동으로 오디오 파일을 업로드할 수 있습니다:")
             
-            # 음성 인식 처리
-            if st.button("🔍 음성 인식", key="transcribe_button", use_container_width=True):
-                with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
-                    # 오디오를 바이트로 변환
-                    audio_bytes = audio.export().read()
+            # 파일 업로드로 대체
+            uploaded_audio = st.file_uploader(
+                "오디오 파일 업로드", 
+                type=['wav', 'mp3', 'm4a', 'ogg'],
+                help="녹음된 오디오 파일을 업로드하세요."
+            )
+            
+            if uploaded_audio is not None:
+                st.audio(uploaded_audio)
+                
+                if st.button("🔍 음성 인식", key="transcribe_uploaded", use_container_width=True):
+                    with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
+                        # 업로드된 오디오 파일 처리
+                        audio_bytes = uploaded_audio.read()
+                        
+                        # Whisper API로 전사
+                        transcribed_text = transcribe_audio_with_whisper(audio_bytes)
+                        
+                        if transcribed_text:
+                            process_text_input(transcribed_text, "음성(Whisper)")
+                            st.success(f"✅ 음성 인식 완료: {transcribed_text}")
+                            st.rerun()
+                        else:
+                            st.error("❌ 음성 인식에 실패했습니다.")
+        else:
+            # 첫 번째 패키지 시도
+            try:
+                audio_data = st_audiorec()
+                
+                if audio_data is not None:
+                    st.audio(audio_data, format='audio/wav')
                     
-                    # Whisper API로 전사
-                    transcribed_text = transcribe_audio_with_whisper(audio_bytes)
+                    if st.button("🔍 음성 인식", key="transcribe_button1", use_container_width=True):
+                        with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
+                            # Whisper API로 전사
+                            transcribed_text = transcribe_audio_with_whisper(audio_data)
+                            
+                            if transcribed_text:
+                                process_text_input(transcribed_text, "음성(Whisper)")
+                                st.success(f"✅ 음성 인식 완료: {transcribed_text}")
+                                st.rerun()
+                            else:
+                                st.error("❌ 음성 인식에 실패했습니다.")
+            except NameError:
+                # 두 번째 패키지 시도
+                try:
+                    audio_bytes = audio_recorder()
                     
-                    if transcribed_text:
-                        process_text_input(transcribed_text, "음성(Whisper)")
-                        st.success(f"✅ 음성 인식 완료: {transcribed_text}")
-                        st.rerun()
-                    else:
-                        st.error("❌ 음성 인식에 실패했습니다.")
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/wav")
+                        
+                        if st.button("🔍 음성 인식", key="transcribe_button2", use_container_width=True):
+                            with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
+                                # Whisper API로 전사
+                                transcribed_text = transcribe_audio_with_whisper(audio_bytes)
+                                
+                                if transcribed_text:
+                                    process_text_input(transcribed_text, "음성(Whisper)")
+                                    st.success(f"✅ 음성 인식 완료: {transcribed_text}")
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 음성 인식에 실패했습니다.")
+                except NameError:
+                    st.error("⚠️ 오디오 녹음 라이브러리를 사용할 수 없습니다.")
+                    st.info("텍스트 입력을 사용해주세요.")
     
     with col2:
         st.subheader("✏️ 텍스트 입력")
