@@ -4,16 +4,6 @@ import openai
 import time
 import os
 
-try:
-    from st_audiorec import st_audiorec
-    AUDIO_RECORDER_AVAILABLE = True
-except ImportError:
-    try:
-        from streamlit_audio_recorder import audio_recorder
-        AUDIO_RECORDER_AVAILABLE = True
-    except ImportError:
-        AUDIO_RECORDER_AVAILABLE = False
-
 # OpenAI API 키를 Streamlit Secrets에서 가져오기
 try:
     api_key = st.secrets["OPENAI_API_KEY"]
@@ -305,75 +295,47 @@ def main():
         st.subheader("🎤 음성 입력")
         st.markdown("**iPad 및 모바일 지원**")
         
-        if not AUDIO_RECORDER_AVAILABLE:
-            st.error("⚠️ 오디오 녹음 패키지가 설치되지 않았습니다.")
-            st.info("수동으로 오디오 파일을 업로드할 수 있습니다:")
+        # 오디오 파일 업로드
+        st.markdown("#### 📁 오디오 파일 업로드")
+        uploaded_audio = st.file_uploader(
+            "오디오 파일을 업로드하세요", 
+            type=['wav', 'mp3', 'm4a', 'ogg'],
+            help="iPad에서 음성 메모로 녹음한 파일을 업로드하세요."
+        )
+        
+        if uploaded_audio is not None:
+            st.audio(uploaded_audio)
             
-            # 파일 업로드로 대체
-            uploaded_audio = st.file_uploader(
-                "오디오 파일 업로드", 
-                type=['wav', 'mp3', 'm4a', 'ogg'],
-                help="녹음된 오디오 파일을 업로드하세요."
-            )
+            if st.button("🔍 음성 인식", key="transcribe_uploaded", use_container_width=True):
+                with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
+                    # 업로드된 오디오 파일 처리
+                    audio_bytes = uploaded_audio.read()
+                    
+                    # Whisper API로 전사
+                    transcribed_text = transcribe_audio_with_whisper(audio_bytes)
+                    
+                    if transcribed_text:
+                        process_text_input(transcribed_text, "음성(Whisper)")
+                        st.success(f"✅ 음성 인식 완료: {transcribed_text}")
+                        st.rerun()
+                    else:
+                        st.error("❌ 음성 인식에 실패했습니다.")
+        
+        # 사용 방법 안내
+        with st.expander("📖 사용 방법"):
+            st.markdown("""
+            **iPad에서 음성 입력하는 방법:**
             
-            if uploaded_audio is not None:
-                st.audio(uploaded_audio)
-                
-                if st.button("🔍 음성 인식", key="transcribe_uploaded", use_container_width=True):
-                    with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
-                        # 업로드된 오디오 파일 처리
-                        audio_bytes = uploaded_audio.read()
-                        
-                        # Whisper API로 전사
-                        transcribed_text = transcribe_audio_with_whisper(audio_bytes)
-                        
-                        if transcribed_text:
-                            process_text_input(transcribed_text, "음성(Whisper)")
-                            st.success(f"✅ 음성 인식 완료: {transcribed_text}")
-                            st.rerun()
-                        else:
-                            st.error("❌ 음성 인식에 실패했습니다.")
-        else:
-            # 첫 번째 패키지 시도
-            try:
-                audio_data = st_audiorec()
-                
-                if audio_data is not None:
-                    st.audio(audio_data, format='audio/wav')
-                    
-                    if st.button("🔍 음성 인식", key="transcribe_button1", use_container_width=True):
-                        with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
-                            # Whisper API로 전사
-                            transcribed_text = transcribe_audio_with_whisper(audio_data)
-                            
-                            if transcribed_text:
-                                process_text_input(transcribed_text, "음성(Whisper)")
-                                st.success(f"✅ 음성 인식 완료: {transcribed_text}")
-                                st.rerun()
-                            else:
-                                st.error("❌ 음성 인식에 실패했습니다.")
-            except NameError:
-                # 두 번째 패키지 시도
-                try:
-                    audio_bytes = audio_recorder()
-                    
-                    if audio_bytes:
-                        st.audio(audio_bytes, format="audio/wav")
-                        
-                        if st.button("🔍 음성 인식", key="transcribe_button2", use_container_width=True):
-                            with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
-                                # Whisper API로 전사
-                                transcribed_text = transcribe_audio_with_whisper(audio_bytes)
-                                
-                                if transcribed_text:
-                                    process_text_input(transcribed_text, "음성(Whisper)")
-                                    st.success(f"✅ 음성 인식 완료: {transcribed_text}")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ 음성 인식에 실패했습니다.")
-                except NameError:
-                    st.error("⚠️ 오디오 녹음 라이브러리를 사용할 수 없습니다.")
-                    st.info("텍스트 입력을 사용해주세요.")
+            1. **음성 메모 앱** 또는 **녹음 앱**으로 음성 녹음
+            2. 녹음 파일을 **"파일" 앱**에 저장 
+            3. 위의 **"오디오 파일 업로드"**로 파일 선택
+            4. **"음성 인식"** 버튼 클릭
+            
+            **지원 파일 형식:** WAV, MP3, M4A, OGG
+            
+            **참고:** 브라우저 직접 녹음 기능은 패키지 호환성 문제로 
+            현재 파일 업로드 방식만 지원합니다.
+            """)
     
     with col2:
         st.subheader("✏️ 텍스트 입력")
