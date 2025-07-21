@@ -24,21 +24,19 @@ recording_audio = None
 stop_recording = False
 
 def recognize_speech_with_interrupt():
-    """웹 음성 인식 (iPad Safari 호환)"""
+    """웹 음성 인식 (iPad Safari 호환) - 자동 실행"""
     try:
-        # 간단한 웹 음성 인식 실행
+        # 자동으로 웹 음성 인식 시작
         speech_html = """
         <div style="text-align: center; padding: 15px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff;">
             <p id="status"><strong>🎤 마이크 권한을 허용하고 말씀해주세요</strong></p>
-            <button onclick="startSpeech()" style="background-color: #1f77b4; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px;">
-                🎤 음성 인식 시작
-            </button>
-            <br><br>
-            <input type="text" id="speechResult" placeholder="인식된 텍스트가 여기에 표시됩니다" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;" readonly>
+            <div id="result-area" style="margin-top: 10px;">
+                <input type="text" id="speechResult" placeholder="인식된 텍스트가 여기에 표시됩니다" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;" readonly>
+            </div>
         </div>
         
         <script>
-        function startSpeech() {
+        function autoStartSpeech() {
             if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
                 const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
                 recognition.continuous = false;
@@ -50,11 +48,24 @@ def recognize_speech_with_interrupt():
                 recognition.onresult = function(event) {
                     const transcript = event.results[0][0].transcript;
                     document.getElementById('speechResult').value = transcript;
-                    document.getElementById('status').innerHTML = '<strong>✅ 음성 인식 완료!</strong>';
+                    document.getElementById('status').innerHTML = '<strong>✅ 음성 인식 완료: "' + transcript + '"</strong>';
+                    
+                    // 자동으로 클립보드에 복사
+                    navigator.clipboard.writeText(transcript).then(function() {
+                        document.getElementById('status').innerHTML = '<strong>📋 클립보드에 복사됨! 아래에 붙여넣으세요</strong>';
+                    }).catch(function() {
+                        document.getElementById('status').innerHTML = '<strong>✅ 음성 인식 완료! 텍스트를 복사해서 아래에 붙여넣으세요</strong>';
+                    });
                 };
                 
                 recognition.onerror = function(event) {
-                    document.getElementById('status').innerHTML = '<strong>❌ 오류: ' + event.error + '</strong>';
+                    if (event.error === 'not-allowed') {
+                        document.getElementById('status').innerHTML = '<strong>❌ 마이크 권한을 허용해주세요</strong>';
+                    } else if (event.error === 'no-speech') {
+                        document.getElementById('status').innerHTML = '<strong>❌ 음성이 감지되지 않았습니다</strong>';
+                    } else {
+                        document.getElementById('status').innerHTML = '<strong>❌ 오류: ' + event.error + '</strong>';
+                    }
                 };
                 
                 recognition.start();
@@ -62,18 +73,21 @@ def recognize_speech_with_interrupt():
                 document.getElementById('status').innerHTML = '<strong>❌ 이 브라우저는 음성 인식을 지원하지 않습니다</strong>';
             }
         }
+        
+        // 페이지 로드 후 자동 시작
+        setTimeout(autoStartSpeech, 500);
         </script>
         """
         
-        st.components.v1.html(speech_html, height=180)
+        st.components.v1.html(speech_html, height=150)
         
-        # 안내 메시지
-        st.info("💡 위의 '🎤 음성 인식 시작' 버튼을 눌러 음성을 인식하고, 인식된 텍스트를 아래에 복사해서 입력해주세요.")
+        # 간단한 안내
+        st.info("🎤 웹 음성 인식이 자동으로 시작됩니다. 인식된 텍스트를 아래에 붙여넣어 주세요.")
         
-        # 사용자 입력 필드
+        # 결과 입력 필드
         user_input = st.text_input(
-            "인식된 텍스트를 입력하세요:",
-            placeholder="위에서 인식된 텍스트를 복사해서 여기에 붙여넣으세요",
+            "인식된 텍스트:",
+            placeholder="음성 인식 결과를 여기에 붙여넣으세요",
             key=f"speech_input_{int(time.time())}"
         )
         
