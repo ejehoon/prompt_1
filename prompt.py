@@ -461,257 +461,183 @@ def main():
         st.session_state.corrected_text = None
     if 'translated_text' not in st.session_state:
         st.session_state.translated_text = None
-    if 'is_recording' not in st.session_state:
-        st.session_state.is_recording = False
 
     # 음성 입력 부분
     st.markdown("#### 🎤 음성으로 입력하기")
+    st.markdown("**iPad Safari 웹 음성 인식 🚀**")
     
-    # 탭으로 구분 (PC용, 웹용)
-    tab1, tab2, tab3 = st.tabs(["🖥️ PC 마이크", "🌐 웹 음성인식 (iPad)", "📁 파일 업로드"])
-    
-    with tab1:
-        st.markdown("**PC 전용 - 마이크 직접 연결**")
+    # Web Speech API 컴포넌트
+    speech_html = """
+    <div style="padding: 20px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff; margin: 10px 0;">
+        <h4 style="margin-top: 0; color: #1f77b4;">🎤 실시간 웹 음성 인식</h4>
+        <p style="margin: 5px 0; color: #666;">iPad Safari, Chrome, Edge 등에서 지원</p>
         
-        # 마이크 버튼
-        if st.session_state.is_recording:
-            button_text = "🔴 녹음 중 (클릭하여 종료)"
-            button_type = "secondary"
-        else:
-            button_text = "🎤 마이크 시작"
-            button_type = "primary"
-
-        if st.button(button_text, key='mic_button', type=button_type):
-            if not st.session_state.is_recording:
-                # 녹음 시작
-                st.session_state.is_recording = True
-                st.rerun()  # 버튼 상태를 즉시 업데이트
-            else:
-                # 녹음 종료
-                st.session_state.is_recording = False
-                global stop_recording
-                stop_recording = True
-                st.rerun()  # 버튼 상태를 즉시 업데이트
-
-        # 녹음 중일 때 음성 인식 실행
-        if st.session_state.is_recording:
-            with st.spinner("🎤 음성을 인식하는 중... (1.5초 멈추면 자동 종료)"):
-                user_input = recognize_speech_with_interrupt()
-                
-            # 녹음 완료 후 처리
-            st.session_state.is_recording = False
-            
-            if user_input and "중단되었습니다" not in user_input and "인식할 수 없습니다" not in user_input and "마이크 접근 실패" not in user_input:
-                process_text_input(user_input, "음성(PC)")
-                st.rerun()
-            elif user_input:
-                if "중단되었습니다" in user_input:
-                    st.info("🔴 녹음이 중단되었습니다.")
-                elif "마이크 접근 실패" in user_input:
-                    st.warning("⚠️ PC 마이크 접근 실패. 웹 음성인식 탭을 사용해주세요.")
-                else:
-                    st.warning(f"⚠️ {user_input}")
-            
-            st.rerun()  # 버튼 상태 업데이트
-    
-    with tab2:
-        st.markdown("**iPad Safari & 모든 브라우저 지원 🚀**")
+        <button id="startBtn" onclick="startRecognition()" 
+            style="background-color: #1f77b4; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin: 8px 4px; font-size: 16px;">
+            🎤 마이크 시작
+        </button>
+        <button id="stopBtn" onclick="stopRecognition()" 
+            style="background-color: #dc3545; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin: 8px 4px; font-size: 16px;" disabled>
+            🔴 녹음 중지
+        </button>
         
-        # Web Speech API 컴포넌트
-        speech_html = """
-        <div style="padding: 20px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff; margin: 10px 0;">
-            <h4 style="margin-top: 0; color: #1f77b4;">🎤 실시간 웹 음성 인식</h4>
-            <p style="margin: 5px 0; color: #666;">iPad Safari, Chrome, Edge 등에서 지원</p>
-            
-            <button id="startBtn" onclick="startRecognition()" 
-                style="background-color: #1f77b4; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin: 8px 4px; font-size: 16px;">
-                🎤 음성 인식 시작
-            </button>
-            <button id="stopBtn" onclick="stopRecognition()" 
-                style="background-color: #dc3545; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin: 8px 4px; font-size: 16px;" disabled>
-                ⏹️ 인식 중지
-            </button>
-            
-            <div id="status" style="margin: 15px 0; font-weight: bold; color: #28a745;">
-                🟢 준비됨 - 마이크 권한 허용 후 시작하세요
-            </div>
-            
-            <div id="result" style="margin: 15px 0; padding: 15px; border: 2px solid #e9ecef; border-radius: 8px; min-height: 80px; background-color: white; font-family: 'Noto Sans KR', sans-serif;">
-                <em style="color: #6c757d;">인식된 텍스트가 여기에 실시간으로 표시됩니다...</em>
-            </div>
-            
-            <div style="margin-top: 15px;">
-                <button id="copyBtn" onclick="copyToClipboard()" 
-                    style="background-color: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 4px;" disabled>
-                    📋 텍스트 복사
-                </button>
-                <button id="clearBtn" onclick="clearResult()" 
-                    style="background-color: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 4px;">
-                    🗑️ 지우기
-                </button>
-            </div>
+        <div id="status" style="margin: 15px 0; font-weight: bold; color: #28a745;">
+            🟢 준비됨 - 마이크 권한 허용 후 시작하세요
         </div>
-
-        <script>
-        let recognition;
-        let isRecognizing = false;
-        let finalTranscript = '';
-
-        function startRecognition() {
-            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                recognition.lang = 'ko-KR';
-                
-                recognition.onstart = function() {
-                    isRecognizing = true;
-                    updateStatus('🎤 음성 인식 중... 말씀하세요!', '#dc3545');
-                    document.getElementById('startBtn').disabled = true;
-                    document.getElementById('stopBtn').disabled = false;
-                    document.getElementById('copyBtn').disabled = true;
-                    finalTranscript = '';
-                };
-                
-                recognition.onresult = function(event) {
-                    let interimTranscript = '';
-                    let newFinalTranscript = '';
-                    
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        const transcript = event.results[i][0].transcript;
-                        if (event.results[i].isFinal) {
-                            newFinalTranscript += transcript;
-                        } else {
-                            interimTranscript += transcript;
-                        }
-                    }
-                    
-                    finalTranscript += newFinalTranscript;
-                    
-                    let displayText = '';
-                    if (finalTranscript) {
-                        displayText += '<div style="color: #000; font-weight: bold; margin-bottom: 8px;">✅ 확정: ' + finalTranscript + '</div>';
-                    }
-                    if (interimTranscript) {
-                        displayText += '<div style="color: #666; font-style: italic;">⏳ 인식 중: ' + interimTranscript + '</div>';
-                    }
-                    
-                    document.getElementById('result').innerHTML = displayText || '<em style="color: #6c757d;">음성을 듣고 있습니다...</em>';
-                    
-                    if (finalTranscript) {
-                        document.getElementById('copyBtn').disabled = false;
-                    }
-                };
-                
-                recognition.onerror = function(event) {
-                    let errorMsg = '❌ 오류: ' + event.error;
-                    if (event.error === 'not-allowed') {
-                        errorMsg += ' (마이크 권한을 허용해주세요)';
-                    } else if (event.error === 'no-speech') {
-                        errorMsg += ' (음성이 감지되지 않습니다)';
-                    }
-                    updateStatus(errorMsg, '#dc3545');
-                    stopRecognition();
-                };
-                
-                recognition.onend = function() {
-                    if (isRecognizing) {
-                        let msg = finalTranscript ? 
-                            '✅ 음성 인식 완료! 아래에서 텍스트를 복사해서 사용하세요.' : 
-                            '⏹️ 음성 인식이 종료되었습니다.';
-                        updateStatus(msg, '#28a745');
-                    }
-                    isRecognizing = false;
-                    document.getElementById('startBtn').disabled = false;
-                    document.getElementById('stopBtn').disabled = true;
-                };
-                
-                recognition.start();
-            } else {
-                updateStatus('❌ 이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Safari를 사용해주세요.', '#dc3545');
-            }
-        }
-
-        function stopRecognition() {
-            if (recognition && isRecognizing) {
-                recognition.stop();
-            }
-            isRecognizing = false;
-        }
-
-        function updateStatus(message, color) {
-            const statusEl = document.getElementById('status');
-            statusEl.innerHTML = message;
-            statusEl.style.color = color;
-        }
-
-        function copyToClipboard() {
-            if (finalTranscript) {
-                navigator.clipboard.writeText(finalTranscript).then(function() {
-                    updateStatus('📋 텍스트가 클립보드에 복사되었습니다!', '#28a745');
-                    setTimeout(() => {
-                        updateStatus('🟢 복사된 텍스트를 아래 입력창에 붙여넣으세요', '#17a2b8');
-                    }, 2000);
-                });
-            }
-        }
-
-        function clearResult() {
-            finalTranscript = '';
-            document.getElementById('result').innerHTML = '<em style="color: #6c757d;">인식된 텍스트가 여기에 실시간으로 표시됩니다...</em>';
-            document.getElementById('copyBtn').disabled = true;
-            updateStatus('🟢 준비됨 - 마이크 권한 허용 후 시작하세요', '#28a745');
-        }
-        </script>
-        """
         
-        # HTML 컴포넌트 표시
-        st.components.v1.html(speech_html, height=350)
+        <div id="result" style="margin: 15px 0; padding: 15px; border: 2px solid #e9ecef; border-radius: 8px; min-height: 80px; background-color: white; font-family: 'Noto Sans KR', sans-serif;">
+            <em style="color: #6c757d;">인식된 텍스트가 여기에 실시간으로 표시됩니다...</em>
+        </div>
         
-        # 음성 인식 결과 처리용 텍스트 입력
-        st.markdown("**인식된 텍스트 처리:**")
-        speech_result = st.text_area(
-            "위에서 인식된 텍스트를 복사해서 붙여넣으세요:",
-            placeholder="음성 인식 후 '📋 텍스트 복사' 버튼을 누르고 여기에 붙여넣으세요",
-            key="speech_input",
-            height=100
-        )
-        
-        if speech_result.strip():
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("✅ 웹 음성 인식 텍스트 처리", key="process_web_speech", use_container_width=True):
-                    process_text_input(speech_result.strip(), "음성(웹)")
-                    st.rerun()
-            with col2:
-                if st.button("🗑️ 텍스트 지우기", key="clear_web_speech", use_container_width=True):
-                    st.rerun()
-    
-    with tab3:
-        st.markdown("**파일 업로드 - OpenAI Whisper (고정밀)**")
-        
-        # 파일 업로드로 음성 인식
-        uploaded_audio = st.file_uploader(
-            "오디오 파일을 업로드하세요", 
-            type=['wav', 'mp3', 'm4a', 'ogg', 'webm'],
-            help="음성 메모 앱으로 녹음한 파일을 업로드하세요. OpenAI Whisper로 높은 정확도의 한국어 인식을 제공합니다."
-        )
-        
-        if uploaded_audio is not None:
-            st.audio(uploaded_audio)
+        <div style="margin-top: 15px;">
+            <button id="processBtn" onclick="processRecognizedText()" 
+                style="background-color: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; margin: 4px; font-size: 16px;" disabled>
+                ✅ 인식된 텍스트 처리하기
+            </button>
+            <button id="clearBtn" onclick="clearResult()" 
+                style="background-color: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 4px;">
+                🗑️ 지우기
+            </button>
+        </div>
+    </div>
+
+    <script>
+    let recognition;
+    let isRecognizing = false;
+    let finalTranscript = '';
+
+    function startRecognition() {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'ko-KR';
             
-            if st.button("🤖 Whisper로 음성 인식", key="whisper_transcribe", use_container_width=True):
-                with st.spinner("🤖 OpenAI Whisper로 음성을 인식하는 중..."):
-                    audio_bytes = uploaded_audio.read()
-                    transcribed_text = transcribe_audio_with_whisper(audio_bytes)
-                    
-                    if transcribed_text:
-                        process_text_input(transcribed_text, "음성(Whisper)")
-                        st.success(f"✅ Whisper 인식 완료: {transcribed_text}")
-                        st.rerun()
-                    else:
-                        st.error("❌ 음성 인식에 실패했습니다.")
+            recognition.onstart = function() {
+                isRecognizing = true;
+                updateStatus('🎤 음성 인식 중... 말씀하세요! (1.5초 멈추면 자동 종료)', '#dc3545');
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                document.getElementById('processBtn').disabled = true;
+                finalTranscript = '';
+            };
+            
+            recognition.onresult = function(event) {
+                let interimTranscript = '';
+                let newFinalTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        newFinalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                finalTranscript += newFinalTranscript;
+                
+                let displayText = '';
+                if (finalTranscript) {
+                    displayText += '<div style="color: #000; font-weight: bold; margin-bottom: 8px;">✅ 확정: ' + finalTranscript + '</div>';
+                }
+                if (interimTranscript) {
+                    displayText += '<div style="color: #666; font-style: italic;">⏳ 인식 중: ' + interimTranscript + '</div>';
+                }
+                
+                document.getElementById('result').innerHTML = displayText || '<em style="color: #6c757d;">음성을 듣고 있습니다...</em>';
+                
+                if (finalTranscript) {
+                    document.getElementById('processBtn').disabled = false;
+                }
+            };
+            
+            recognition.onerror = function(event) {
+                let errorMsg = '❌ 오류: ' + event.error;
+                if (event.error === 'not-allowed') {
+                    errorMsg += ' (마이크 권한을 허용해주세요)';
+                } else if (event.error === 'no-speech') {
+                    errorMsg += ' (음성이 감지되지 않습니다)';
+                }
+                updateStatus(errorMsg, '#dc3545');
+                stopRecognition();
+            };
+            
+            recognition.onend = function() {
+                if (isRecognizing) {
+                    let msg = finalTranscript ? 
+                        '✅ 음성 인식 완료! "인식된 텍스트 처리하기" 버튼을 눌러주세요.' : 
+                        '⏹️ 음성 인식이 종료되었습니다.';
+                    updateStatus(msg, '#28a745');
+                }
+                isRecognizing = false;
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+            };
+            
+            recognition.start();
+        } else {
+            updateStatus('❌ 이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Safari를 사용해주세요.', '#dc3545');
+        }
+    }
 
+    function stopRecognition() {
+        if (recognition && isRecognizing) {
+            recognition.stop();
+        }
+        isRecognizing = false;
+    }
+
+    function updateStatus(message, color) {
+        const statusEl = document.getElementById('status');
+        statusEl.innerHTML = message;
+        statusEl.style.color = color;
+    }
+
+    function processRecognizedText() {
+        if (finalTranscript) {
+            // Streamlit에 텍스트 전달을 위해 hidden input 사용
+            const hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.id = 'recognizedText';
+            hiddenInput.value = finalTranscript;
+            document.body.appendChild(hiddenInput);
+            
+            // 사용자에게 복사 안내
+            navigator.clipboard.writeText(finalTranscript).then(function() {
+                updateStatus('📋 텍스트가 클립보드에 복사되었습니다! 아래 입력창에 붙여넣고 처리하기를 눌러주세요.', '#17a2b8');
+            }).catch(function() {
+                updateStatus('📝 인식된 텍스트: "' + finalTranscript + '" - 아래 입력창에 복사해서 붙여넣어 주세요.', '#17a2b8');
+            });
+        }
+    }
+
+    function clearResult() {
+        finalTranscript = '';
+        document.getElementById('result').innerHTML = '<em style="color: #6c757d;">인식된 텍스트가 여기에 실시간으로 표시됩니다...</em>';
+        document.getElementById('processBtn').disabled = true;
+        updateStatus('🟢 준비됨 - 마이크 권한 허용 후 시작하세요', '#28a745');
+    }
+    </script>
+    """
+    
+    # HTML 컴포넌트 표시
+    st.components.v1.html(speech_html, height=350)
+    
+    # 음성 인식 결과 처리용 텍스트 입력
+    st.markdown("**인식된 텍스트 처리:**")
+    speech_result = st.text_area(
+        "위에서 인식된 텍스트를 복사해서 붙여넣으세요:",
+        placeholder="음성 인식 후 '✅ 인식된 텍스트 처리하기' 버튼을 누르고 여기에 붙여넣으세요",
+        key="speech_input",
+        height=100
+    )
+    
+    if speech_result.strip():
+        if st.button("✅ 음성 인식 텍스트 처리", key="process_web_speech", use_container_width=True):
+            process_text_input(speech_result.strip(), "음성(웹)")
+            st.rerun()
+    
     # 텍스트 입력 부분 (음성 입력 아래에 추가)
     st.markdown("#### ✏️ 또는 텍스트로 직접 입력하기")
     
@@ -749,11 +675,7 @@ def main():
             st.info(st.session_state.recognized_text)
             # 입력 방식 표시
             if "웹" in str(st.session_state.get('debug_info', {}).get('처리 완료 시간', '')):
-                st.caption("🌐 웹 음성 인식으로 입력됨 (iPad 호환)")
-            elif "Whisper" in str(st.session_state.get('debug_info', {}).get('처리 완료 시간', '')):
-                st.caption("🤖 OpenAI Whisper로 인식됨 (고정밀 인식)")
-            elif "PC" in str(st.session_state.get('debug_info', {}).get('처리 완료 시간', '')):
-                st.caption("🖥️ PC 마이크로 인식됨")
+                st.caption("🎤 웹 음성 인식으로 입력됨 (iPad 호환)")
             else:
                 st.caption("✏️ 직접 텍스트 입력")
                 
