@@ -239,6 +239,37 @@ def main():
     
     st.title("STT 교정 테스트")
 
+    # 페이지 로드시 localStorage에서 음성 인식 결과 확인 및 자동 처리
+    auto_check_html = """
+    <script>
+    const speechResult = localStorage.getItem('speech_recognition_result');
+    if (speechResult && speechResult.trim() !== '') {
+        // URL 쿼리 파라미터로 결과 전달
+        const url = new URL(window.location);
+        url.searchParams.set('auto_speech_result', speechResult);
+        localStorage.removeItem('speech_recognition_result');
+        window.location.href = url.toString();
+    }
+    </script>
+    """
+    
+    st.components.v1.html(auto_check_html, height=1)
+    
+    # 쿼리 파라미터에서 음성 인식 결과 확인하여 자동 처리
+    query_params = st.query_params
+    if 'auto_speech_result' in query_params:
+        speech_result = query_params['auto_speech_result']
+        if speech_result and speech_result.strip():
+            # 녹음 상태 종료
+            st.session_state.is_recording = False
+            
+            # 바로 자동 처리 실행 (원래 로직과 동일)
+            process_text_input(speech_result.strip(), "음성")
+            
+            # 쿼리 파라미터 제거하고 새로고침
+            st.query_params.clear()
+            st.rerun()
+
     # 사이드바에 탭 기능 추가
     with st.sidebar:
         st.markdown("### ⚙️ 설정")
@@ -429,7 +460,7 @@ def main():
             # 웹 음성 인식 컴포넌트 표시
             speech_html = """
             <div style="text-align: center; padding: 20px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff; margin: 10px 0;">
-                <p id="status" style="font-size: 18px; margin-bottom: 15px;"><strong>🎤 마이크 권한을 허용하고 말씘해주세요</strong></p>
+                <p id="status" style="font-size: 18px; margin-bottom: 15px;"><strong>🎤 마이크 권한을 허용하고 말씀해주세요</strong></p>
                 <div id="result-display" style="margin: 15px 0; padding: 10px; background-color: white; border-radius: 5px; min-height: 50px; border: 1px solid #ddd;">
                     <em style="color: #666;">인식된 텍스트가 여기에 표시됩니다...</em>
                 </div>
@@ -452,20 +483,15 @@ def main():
                         document.getElementById('result-display').innerHTML = '<strong style="color: #000;">✅ "' + transcript + '"</strong>';
                         document.getElementById('status').innerHTML = '<strong style="color: #28a745;">🔄 음성 인식 완료! 확인해주세요.</strong>';
                         
-                        // prompt로 결과 확인 및 바로 처리
-                        const userInput = prompt('음성 인식 결과입니다. 수정이 필요하면 편집하고 확인을 눌러주세요:', transcript);
-                        if (userInput !== null && userInput.trim() !== '') {
-                            // 결과를 자동으로 입력창에 설정
-                            const inputElements = document.querySelectorAll('input[placeholder*="음성 인식 후"]');
-                            if (inputElements.length > 0) {
-                                inputElements[0].value = userInput.trim();
-                                inputElements[0].dispatchEvent(new Event('input', { bubbles: true }));
-                                inputElements[0].dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                            document.getElementById('status').innerHTML = '<strong style="color: #28a745;">✅ 처리 완료! 아래에 결과가 입력되었습니다.</strong>';
-                        } else {
-                            document.getElementById('status').innerHTML = '<strong>❌ 처리가 취소되었습니다.</strong>';
-                        }
+                        // 결과를 localStorage에 저장하고 페이지 새로고침으로 Streamlit에 전달
+                        localStorage.setItem('speech_recognition_result', transcript);
+                        
+                        document.getElementById('status').innerHTML = '<strong style="color: #28a745;">✅ 음성 인식 완료! 자동 처리 시작...</strong>';
+                        
+                        // 1초 후 페이지 새로고침하여 Streamlit에서 결과 처리
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 1000);
                     };
                     
                     recognition.onerror = function(event) {
@@ -491,22 +517,8 @@ def main():
             
             st.components.v1.html(speech_html, height=180)
             
-        # 음성 인식 결과 입력창 (간단하게)
-        st.info("💡 위에서 음성 인식이 완료되면 확인 창이 나타납니다. 확인 후 아래에 결과를 입력해주세요.")
-        
-        # 간단한 결과 입력 필드
-        user_input_text = st.text_input(
-            "음성 인식 결과:",
-            placeholder="음성 인식 후 여기에 결과를 입력하고 Enter를 누르세요",
-            key=f"simple_speech_input_{int(time.time()) % 1000}"
-        )
-        
-        # 결과가 입력되면 바로 처리
-        if user_input_text and user_input_text.strip():
-            user_input = user_input_text.strip()
-            st.session_state.is_recording = False
-            process_text_input(user_input, "음성")
-            st.rerun()
+        # 음성 인식 중 안내 메시지
+        st.info("🎤 음성 인식이 완료되면 자동으로 교정 및 번역 처리됩니다.")
         
         # 녹음 중지 버튼 처리 (기존 로직)
         return  # 여기서 함수 종료하여 아래 로직 실행 안 함
