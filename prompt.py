@@ -1,79 +1,49 @@
 import streamlit as st
 import pandas as pd
-import speech_recognition as sr
 import openai
-import threading
 import time
 import os
+from audiorecorder import audiorecorder
 
-# OpenAI API 키 설정 (Streamlit Cloud secrets 사용)
+# OpenAI API 키를 Streamlit Secrets에서 가져오기
 try:
-    # Streamlit Cloud에서 secrets 사용
     api_key = st.secrets["OPENAI_API_KEY"]
-except:
-    # 로컬 환경에서는 환경변수 사용
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        st.error("❌ OpenAI API 키가 설정되지 않았습니다. Streamlit Cloud의 Secrets에서 OPENAI_API_KEY를 설정해주세요.")
-        st.stop()
+    client = openai.OpenAI(api_key=api_key)
+except KeyError:
+    st.error("⚠️ OPENAI_API_KEY가 Streamlit Secrets에 설정되지 않았습니다!")
+    st.info("Streamlit Cloud에서 App settings > Secrets에 다음과 같이 추가해주세요:")
+    st.code('OPENAI_API_KEY = "your-api-key-here"', language="toml")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
+    st.stop()
 
-client = openai.OpenAI(api_key=api_key)
-
-# 전역 변수로 녹음 상태 관리
-recording_audio = None
-stop_recording = False
-
-def recognize_speech_with_interrupt():
-    """자동 종료 + 수동 종료 가능한 음성 인식"""
-    global recording_audio, stop_recording
-    recording_audio = None  # 초기화
-    recognizer = sr.Recognizer()
-    
-    # 음성 인식 설정 조정 (말 끝남 감지 개선)
-    recognizer.pause_threshold = 1.5  # 1.5초 정도 멈추면 종료
-    recognizer.energy_threshold = 300  # 소음 임계값 조정
-    recognizer.non_speaking_duration = 0.8  # 말하지 않는 시간 조정 (더 짧게)
-    
-    def listen_in_background():
-        global recording_audio
-        try:
-            with sr.Microphone() as source:
-                recognizer.adjust_for_ambient_noise(source, duration=1)
-                try:
-                    # 자동 종료 모드로 녹음 (말 끝남 감지 개선)
-                    recording_audio = recognizer.listen(source, timeout=3, phrase_time_limit=30)
-                except sr.WaitTimeoutError:
-                    # 타임아웃 발생 시 수동 종료 모드로 전환
-                    try:
-                        recording_audio = recognizer.listen(source, timeout=30, phrase_time_limit=60)
-                    except Exception as e:
-                        pass
-        except Exception as e:
-            pass
-    
-    # 백그라운드에서 녹음 시작
-    listen_thread = threading.Thread(target=listen_in_background)
-    listen_thread.daemon = True
-    listen_thread.start()
-    
-    # 녹음 중 표시
-    progress_placeholder = st.empty()
-    progress_placeholder.info("🎤 녹음 중... (1.5초 멈추면 자동 종료)")
-    
-    # 녹음 완료 대기
-    listen_thread.join()
-    progress_placeholder.empty()
-    
-    if recording_audio:
-        try:
-            text = recognizer.recognize_google(recording_audio, language='ko-KR')
-            return text
-        except sr.UnknownValueError:
-            return "음성을 인식할 수 없습니다."
-        except sr.RequestError as e:
-            return f"Google Speech Recognition 서비스에 접근할 수 없습니다: {e}"
-    else:
-        return "녹음된 오디오가 없습니다."
+def transcribe_audio_with_whisper(audio_bytes):
+    """OpenAI Whisper를 사용하여 오디오를 텍스트로 변환"""
+    try:
+        # 임시 파일로 저장
+        with open("temp_audio.wav", "wb") as f:
+            f.write(audio_bytes)
+        
+        # Whisper API로 전사
+        with open("temp_audio.wav", "rb") as audio_file:
+            response = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="ko"
+            )
+        
+        # 임시 파일 삭제
+        if os.path.exists("temp_audio.wav"):
+            os.remove("temp_audio.wav")
+        
+        return response.text
+    except Exception as e:
+        st.error(f"음성 인식 실패: {e}")
+        # 임시 파일 정리
+        if os.path.exists("temp_audio.wav"):
+            os.remove("temp_audio.wav")
+        return None
 
 
 def correct_transcription_with_prompt(user_input, system_prompt, user_prompt):
@@ -91,7 +61,7 @@ def correct_transcription_with_prompt(user_input, system_prompt, user_prompt):
         result = response.choices[0].message.content.strip()
         return result
     except Exception as e:
-        st.write(f"프롬프트 처리 실패: {e}")
+        st.error(f"프롬프트 처리 실패: {e}")
         return None
 
 
@@ -131,7 +101,7 @@ def translate_to_english(text):
         result = response.choices[0].message.content.strip()
         return result
     except Exception as e:
-        st.write(f"번역 처리 실패: {e}")
+        st.error(f"번역 처리 실패: {e}")
         return None
 
 
@@ -165,83 +135,36 @@ def process_text_input(user_input, input_type="음성"):
         if translated_text:
             st.session_state.translated_text = translated_text
     
-    # 디버깅: 각 단계 완료 시간
-    with st.expander("디버깅 정보"):
-        # 더 강력한 CSS로 expander 가로 길이 최대화
-        st.markdown("""
-        <style>
-        /* Expander 전체 가로 길이 확장 */
-        .stExpander {
-            width: 100% !important;
-            max-width: none !important;
-        }
-        .stExpander > div {
-            width: 100% !important;
-            max-width: none !important;
-        }
-        .stExpander .streamlit-expanderContent {
-            width: 100% !important;
-            max-width: none !important;
-        }
-        /* 텍스트 에어리어 가로 길이 확장 */
-        .stTextArea textarea {
-            width: 100% !important;
-            max-width: none !important;
-            min-width: 100% !important;
-        }
-        /* 디버깅 전용 스타일 */
-        .debug-wide {
-            width: 100% !important;
-            max-width: 100vw !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        st.write("**처리 완료 시간:**")
-        st.write(f"📝 {input_type} 입력 완료 시간: {input_completed_time}")
-        st.write(f"📊 TM 교정 완료 시간: {tm_completed_time}")
-        st.write(f"🔍 검수 LLM 처리 완료 시간: {correction_completed_time}")
-        if 'translation_completed_time' in locals():
-            st.write(f"🌐 번역 LLM 처리 완료 시간: {translation_completed_time}")
-        
-        st.markdown("---")
-        st.write("**프롬프트 정보:**")
-        
-        # System Prompt를 최대 가로 길이로 표시
-        st.write("System Prompt:")
-        st.text_area(
-            "system_debug", 
-            value=st.session_state.saved_system_prompt, 
-            height=200, 
-            disabled=True, 
-            label_visibility="collapsed",
-            key="debug_system_prompt"
-        )
-        
-        # User Prompt를 최대 가로 길이로 표시
-        st.write("User Prompt:")
-        st.text_area(
-            "user_debug", 
-            value=user_prompt, 
-            height=150, 
-            disabled=True, 
-            label_visibility="collapsed",
-            key="debug_user_prompt"
-        )
-        
-        # TM 적용 여부 표시
-        if st.session_state.get('tm_df') is not None:
-            st.markdown("---")
-            st.write("**TM 정보:**")
-            st.write(f"📊 TM 항목 수: {len(st.session_state.tm_df)}개")
-            if st.session_state.recognized_text != st.session_state.tm_corrected_text:
-                st.write("✅ TM 교정 적용됨")
-            else:
-                st.write("➖ TM 교정 변경사항 없음")
+    # 디버깅 정보를 세션 상태에 저장
+    debug_info = {
+        "처리 완료 시간": f"""📝 {input_type} 입력 완료 시간: {input_completed_time}
+🔍 검수 LLM 처리 완료 시간: {correction_completed_time}
+📊 TM 교정 완료 시간: {tm_completed_time}""",
+        "System Prompt": st.session_state.saved_system_prompt,
+        "User Prompt": user_prompt
+    }
+    
+    # 번역 시간 추가 (있는 경우)
+    if 'translation_completed_time' in locals():
+        debug_info["처리 완료 시간"] += f"\n🌐 번역 LLM 처리 완료 시간: {translation_completed_time}"
+    
+    # TM 정보 추가
+    if st.session_state.get('tm_df') is not None:
+        tm_status = "✅ TM 교정 적용됨" if st.session_state.recognized_text != st.session_state.tm_corrected_text else "➖ TM 교정 변경사항 없음"
+        debug_info["TM 정보"] = f"📊 TM 항목 수: {len(st.session_state.tm_df)}개\n{tm_status}"
+    
+    st.session_state.debug_info = debug_info
 
 
 def main():
-    st.title("STT 교정 테스트")
+    st.set_page_config(
+        page_title="STT 교정 테스트",
+        page_icon="🎤",
+        layout="wide"
+    )
+    
+    st.title("🎤 STT 교정 테스트")
+    st.markdown("**iPad 및 웹 환경 호환 버전**")
 
     # 사이드바에 탭 기능 추가
     with st.sidebar:
@@ -356,8 +279,8 @@ def main():
                 st.markdown("**TM 파일 형식 안내:**")
                 st.markdown("- Excel (.xlsx) 또는 CSV 파일")
 
-    # 음성 및 텍스트 입력
-    st.subheader("음성 및 텍스트 입력")
+    # 메인 영역 - 입력 및 처리
+    col1, col2 = st.columns([1, 1])
     
     # 세션 상태 초기화
     if 'recognized_text' not in st.session_state:
@@ -368,61 +291,63 @@ def main():
         st.session_state.corrected_text = None
     if 'translated_text' not in st.session_state:
         st.session_state.translated_text = None
-    if 'is_recording' not in st.session_state:
-        st.session_state.is_recording = False
 
-    # 음성 입력 부분
-    st.markdown("#### 🎤 음성으로 입력하기")
-    
-    # 마이크 버튼
-    if st.session_state.is_recording:
-        button_text = "🔴 녹음 중... (클릭하여 종료)"
-    else:
-        button_text = "🎤 마이크 시작"
-
-    if st.button(button_text, key='mic_button'):
-        if not st.session_state.is_recording:
-            # 녹음 시작
-            st.session_state.is_recording = True
-            
-            user_input = recognize_speech_with_interrupt()
-            
-            if user_input:
-                process_text_input(user_input, "음성")
-                
-            st.session_state.is_recording = False
-        else:
-            # 녹음 종료
-            st.session_state.is_recording = False
-            global stop_recording
-            stop_recording = True
-
-    # 텍스트 입력 부분 (음성 입력 아래에 추가)
-    st.markdown("#### ✏️ 또는 텍스트로 직접 입력하기")
-    
-    # 텍스트 입력 필드
-    text_input = st.text_area("텍스트를 입력하세요:", 
-                               value=st.session_state.recognized_text if st.session_state.recognized_text else "",
-                               key="text_input_area",
-                               height=100,
-                               placeholder="예: 이것은 텍스트 입력 테스트인가요?")
-    
-    # 버튼 컬럼
-    col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button("🔄 처리하기", key="text_input_button", use_container_width=True):
-            if text_input:
-                process_text_input(text_input, "텍스트")
-            else:
-                st.warning("텍스트를 입력해주세요!")
+        st.subheader("🎤 음성 입력")
+        st.markdown("**iPad 및 모바일 지원**")
+        
+        # 오디오 녹음기
+        audio = audiorecorder("🎤 녹음 시작", "🔴 녹음 중...")
+        
+        if len(audio) > 0:
+            # 오디오 플레이어 표시
+            st.audio(audio.export().read())
+            
+            # 음성 인식 처리
+            if st.button("🔍 음성 인식", key="transcribe_button", use_container_width=True):
+                with st.spinner("🎤 OpenAI Whisper로 음성을 인식하는 중..."):
+                    # 오디오를 바이트로 변환
+                    audio_bytes = audio.export().read()
+                    
+                    # Whisper API로 전사
+                    transcribed_text = transcribe_audio_with_whisper(audio_bytes)
+                    
+                    if transcribed_text:
+                        process_text_input(transcribed_text, "음성(Whisper)")
+                        st.success(f"✅ 음성 인식 완료: {transcribed_text}")
+                        st.rerun()
+                    else:
+                        st.error("❌ 음성 인식에 실패했습니다.")
     
     with col2:
-        if st.button("🗑️ 지우기", key="clear_text_button", use_container_width=True):
-            st.session_state.recognized_text = None
-            st.session_state.tm_corrected_text = None
-            st.session_state.corrected_text = None
-            st.session_state.translated_text = None
-            st.rerun()
+        st.subheader("✏️ 텍스트 입력")
+        st.markdown("**직접 텍스트 입력**")
+        
+        # 텍스트 입력 필드
+        text_input = st.text_area(
+            "텍스트를 입력하세요:", 
+            height=150,
+            placeholder="예: 안녕하세요. 처리하기를 눌러주세요.",
+            key="text_input_main"
+        )
+        
+        # 처리하기 버튼
+        if st.button("🔄 처리하기", key="text_input_button", use_container_width=True):
+            if text_input.strip():
+                process_text_input(text_input.strip(), "텍스트")
+                st.rerun()
+            else:
+                st.warning("텍스트를 입력해주세요!")
+
+    # 디버깅 정보 표시 (처리하기 버튼 바로 아래)
+    if st.session_state.get('debug_info'):
+        with st.expander("🔍 디버깅 정보"):
+            for key, value in st.session_state.debug_info.items():
+                st.write(f"**{key}:**")
+                if key in ["System Prompt", "User Prompt"]:
+                    st.code(value, language="text")
+                else:
+                    st.write(value)
 
     # 결과 표시
     if st.session_state.recognized_text:
@@ -449,29 +374,15 @@ def main():
                 st.markdown("**🌐 번역:**")
                 st.success(st.session_state.translated_text)
                 
-        # 추가 액션 버튼들
+        # 결과 지우기 버튼
         st.markdown("---")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("📋 결과 복사", key="copy_result"):
-                if st.session_state.translated_text:
-                    st.code(st.session_state.translated_text, language="text")
-                    st.success("번역 결과가 표시되었습니다!")
-                    
-        with col2:
-            if st.button("🔄 다시 처리", key="reprocess"):
-                if st.session_state.recognized_text:
-                    process_text_input(st.session_state.recognized_text, "재처리")
-                    
-        with col3:
-            if st.button("🗑️ 전체 지우기", key="clear_all"):
-                st.session_state.recognized_text = None
-                st.session_state.tm_corrected_text = None
-                st.session_state.corrected_text = None
-                st.session_state.translated_text = None
-                st.success("모든 결과가 삭제되었습니다!")
-                st.rerun()
+        if st.button("🗑️ 전체 지우기", key="clear_all", use_container_width=True):
+            st.session_state.recognized_text = None
+            st.session_state.tm_corrected_text = None
+            st.session_state.corrected_text = None
+            st.session_state.translated_text = None
+            st.success("모든 결과가 삭제되었습니다!")
+            st.rerun()
 
 
 if __name__ == "__main__":
