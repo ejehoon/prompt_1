@@ -24,65 +24,66 @@ recording_audio = None
 stop_recording = False
 
 def recognize_speech_with_interrupt():
-    """자동 종료 + 수동 종료 가능한 음성 인식 (PC용)"""
-    global recording_audio, stop_recording
-    recording_audio = None  # 초기화
-    stop_recording = False  # 초기화
-    
+    """웹 음성 인식 (iPad Safari 호환)"""
     try:
-        recognizer = sr.Recognizer()
+        # 간단한 웹 음성 인식 실행
+        speech_html = """
+        <div style="text-align: center; padding: 15px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff;">
+            <p id="status"><strong>🎤 마이크 권한을 허용하고 말씀해주세요</strong></p>
+            <button onclick="startSpeech()" style="background-color: #1f77b4; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px;">
+                🎤 음성 인식 시작
+            </button>
+            <br><br>
+            <input type="text" id="speechResult" placeholder="인식된 텍스트가 여기에 표시됩니다" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;" readonly>
+        </div>
         
-        # 음성 인식 설정 조정 (말 끝남 감지 개선)
-        recognizer.pause_threshold = 1.5  # 1.5초 정도 멈추면 종료
-        recognizer.energy_threshold = 300  # 소음 임계값 조정
-        recognizer.non_speaking_duration = 0.8  # 말하지 않는 시간 조정 (더 짧게)
+        <script>
+        function startSpeech() {
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'ko-KR';
+                
+                document.getElementById('status').innerHTML = '<strong>🎤 음성을 듣고 있습니다... 말씀하세요!</strong>';
+                
+                recognition.onresult = function(event) {
+                    const transcript = event.results[0][0].transcript;
+                    document.getElementById('speechResult').value = transcript;
+                    document.getElementById('status').innerHTML = '<strong>✅ 음성 인식 완료!</strong>';
+                };
+                
+                recognition.onerror = function(event) {
+                    document.getElementById('status').innerHTML = '<strong>❌ 오류: ' + event.error + '</strong>';
+                };
+                
+                recognition.start();
+            } else {
+                document.getElementById('status').innerHTML = '<strong>❌ 이 브라우저는 음성 인식을 지원하지 않습니다</strong>';
+            }
+        }
+        </script>
+        """
         
-        def listen_in_background():
-            global recording_audio, stop_recording
-            try:
-                with sr.Microphone() as source:
-                    recognizer.adjust_for_ambient_noise(source, duration=1)
-                    try:
-                        # 자동 종료 모드로 녹음 (말 끝남 감지 개선)
-                        recording_audio = recognizer.listen(source, timeout=3, phrase_time_limit=30)
-                    except sr.WaitTimeoutError:
-                        # 타임아웃 발생 시 수동 종료 모드로 전환
-                        try:
-                            recording_audio = recognizer.listen(source, timeout=30, phrase_time_limit=60)
-                        except Exception as e:
-                            pass
-            except Exception as e:
-                pass
+        st.components.v1.html(speech_html, height=180)
         
-        # 백그라운드에서 녹음 시작
-        listen_thread = threading.Thread(target=listen_in_background)
-        listen_thread.daemon = True
-        listen_thread.start()
+        # 안내 메시지
+        st.info("💡 위의 '🎤 음성 인식 시작' 버튼을 눌러 음성을 인식하고, 인식된 텍스트를 아래에 복사해서 입력해주세요.")
         
-        # 녹음 완료 대기 (non-blocking으로 변경)
-        max_wait_time = 35  # 최대 대기 시간 (초)
-        wait_start = time.time()
+        # 사용자 입력 필드
+        user_input = st.text_input(
+            "인식된 텍스트를 입력하세요:",
+            placeholder="위에서 인식된 텍스트를 복사해서 여기에 붙여넣으세요",
+            key=f"speech_input_{int(time.time())}"
+        )
         
-        while listen_thread.is_alive() and not stop_recording and (time.time() - wait_start < max_wait_time):
-            time.sleep(0.1)  # 짧은 간격으로 체크
-        
-        if listen_thread.is_alive():
-            # 스레드가 아직 실행 중이면 강제 종료 시그널
-            stop_recording = True
-            listen_thread.join(timeout=1)
-        
-        if recording_audio and not stop_recording:
-            try:
-                text = recognizer.recognize_google(recording_audio, language='ko-KR')
-                return text
-            except sr.UnknownValueError:
-                return "음성을 인식할 수 없습니다."
-            except sr.RequestError as e:
-                return f"Google Speech Recognition 서비스에 접근할 수 없습니다: {e}"
+        if user_input and user_input.strip():
+            return user_input.strip()
         else:
-            return "녹음이 중단되었습니다."
+            return "음성을 인식할 수 없습니다."
+            
     except Exception as e:
-        return f"마이크 접근 실패: {e}. 웹 브라우저에서는 하단의 웹 음성 인식을 사용하세요."
+        return f"음성 인식 실패: {e}"
 
 def transcribe_audio_with_whisper(audio_bytes):
     """OpenAI Whisper를 사용하여 오디오를 텍스트로 변환 (iPad 호환)"""
@@ -461,77 +462,51 @@ def main():
         st.session_state.corrected_text = None
     if 'translated_text' not in st.session_state:
         st.session_state.translated_text = None
+    if 'is_recording' not in st.session_state:
+        st.session_state.is_recording = False
 
     # 음성 입력 부분
     st.markdown("#### 🎤 음성으로 입력하기")
     
-    # 간단한 마이크 버튼 (기존 UI 완전 복원)
-    if st.button("🎤 마이크 시작", key='mic_button', type="primary"):
-        st.info("🎤 마이크 권한을 허용하고 말씀해주세요. 음성 인식 후 아래 텍스트 입력창에 결과를 붙여넣어 주세요.")
-        
-        # 웹 음성 인식 JavaScript
-        speech_html = """
-        <div style="text-align: center; padding: 10px;">
-            <p><strong>🎤 웹 음성 인식 실행 중...</strong></p>
-            <button onclick="startSpeechRecognition()" style="background-color: #1f77b4; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                음성 인식 시작
-            </button>
-        </div>
-        
-        <script>
-        function startSpeechRecognition() {
-            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                recognition.continuous = false;
-                recognition.interimResults = false;
-                recognition.lang = 'ko-KR';
-                
-                recognition.onstart = function() {
-                    document.querySelector('p').innerHTML = '<strong>🎤 음성을 듣고 있습니다... 말씀하세요!</strong>';
-                };
-                
-                recognition.onresult = function(event) {
-                    const transcript = event.results[0][0].transcript;
-                    document.querySelector('p').innerHTML = '<strong>✅ 음성 인식 완료!</strong>';
-                    
-                    // 클립보드에 복사
-                    navigator.clipboard.writeText(transcript).then(function() {
-                        alert('음성 인식 완료: "' + transcript + '"\\n\\n클립보드에 복사되었습니다. 아래 텍스트 입력창에 붙여넣어 주세요.');
-                    }).catch(function() {
-                        alert('음성 인식 완료: "' + transcript + '"\\n\\n이 텍스트를 복사해서 아래 텍스트 입력창에 붙여넣어 주세요.');
-                    });
-                };
-                
-                recognition.onerror = function(event) {
-                    if (event.error === 'not-allowed') {
-                        alert('마이크 권한을 허용해주세요.');
-                    } else {
-                        alert('음성 인식 오류: ' + event.error);
-                    }
-                    document.querySelector('p').innerHTML = '<strong>❌ 음성 인식 오류</strong>';
-                };
-                
-                recognition.onend = function() {
-                    console.log('음성 인식 종료');
-                };
-                
-                recognition.start();
-            } else {
-                alert('이 브라우저는 음성 인식을 지원하지 않습니다.');
-            }
-        }
-        
-        // 페이지 로드 시 자동 실행
-        window.onload = function() {
-            startSpeechRecognition();
-        };
-        </script>
-        """
-        
-        st.components.v1.html(speech_html, height=120)
-    
+    # 마이크 버튼
+    if st.session_state.is_recording:
+        button_text = "🔴 녹음 중 (클릭하여 종료)"
+        button_type = "secondary"
+    else:
+        button_text = "🎤 마이크 시작"
+        button_type = "primary"
 
-    
+    if st.button(button_text, key='mic_button', type=button_type):
+        if not st.session_state.is_recording:
+            # 녹음 시작
+            st.session_state.is_recording = True
+            st.rerun()  # 버튼 상태를 즉시 업데이트
+        else:
+            # 녹음 종료
+            st.session_state.is_recording = False
+            global stop_recording
+            stop_recording = True
+            st.rerun()  # 버튼 상태를 즉시 업데이트
+
+    # 녹음 중일 때 음성 인식 실행
+    if st.session_state.is_recording:
+        with st.spinner("🎤 음성을 인식하는 중... (1.5초 멈추면 자동 종료)"):
+            user_input = recognize_speech_with_interrupt()
+            
+        # 녹음 완료 후 처리
+        st.session_state.is_recording = False
+        
+        if user_input and "중단되었습니다" not in user_input and "인식할 수 없습니다" not in user_input and "웹 음성 인식 실패" not in user_input:
+            process_text_input(user_input, "음성")
+            st.rerun()
+        elif user_input:
+            if "중단되었습니다" in user_input:
+                st.info("🔴 녹음이 중단되었습니다.")
+            else:
+                st.warning(f"⚠️ {user_input}")
+        
+        st.rerun()  # 버튼 상태 업데이트
+
     # 텍스트 입력 부분 (음성 입력 아래에 추가)
     st.markdown("#### ✏️ 또는 텍스트로 직접 입력하기")
     
