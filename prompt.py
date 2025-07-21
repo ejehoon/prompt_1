@@ -424,23 +424,15 @@ def main():
     # 녹음 중일 때 음성 인식 실행
     if st.session_state.is_recording:
         
-        # 웹 음성 인식 상태 초기화
-        if 'web_speech_result' not in st.session_state:
-            st.session_state.web_speech_result = ""
-        
         with st.spinner("🎤 음성을 인식하는 중... (1.5초 멈추면 자동 종료)"):
             
             # 웹 음성 인식 컴포넌트 표시
             speech_html = """
             <div style="text-align: center; padding: 20px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff; margin: 10px 0;">
-                <p id="status" style="font-size: 18px; margin-bottom: 15px;"><strong>🎤 마이크 권한을 허용하고 말씀해주세요</strong></p>
-                <input type="text" id="speechResult" placeholder="인식된 텍스트가 여기에 나타납니다" 
-                       style="width: 80%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; text-align: center;" readonly>
-                <br><br>
-                <button onclick="copySpeechResult()" id="copyBtn" 
-                        style="background-color: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; display: none;">
-                    📋 결과 복사하기
-                </button>
+                <p id="status" style="font-size: 18px; margin-bottom: 15px;"><strong>🎤 마이크 권한을 허용하고 말씘해주세요</strong></p>
+                <div id="result-display" style="margin: 15px 0; padding: 10px; background-color: white; border-radius: 5px; min-height: 50px; border: 1px solid #ddd;">
+                    <em style="color: #666;">인식된 텍스트가 여기에 표시됩니다...</em>
+                </div>
             </div>
             
             <script>
@@ -455,37 +447,41 @@ def main():
                     
                     recognition.onresult = function(event) {
                         const transcript = event.results[0][0].transcript;
-                        document.getElementById('speechResult').value = transcript;
-                        document.getElementById('status').innerHTML = '<strong>✅ 음성 인식 완료!</strong>';
-                        document.getElementById('copyBtn').style.display = 'inline-block';
                         
-                        // 자동으로 클립보드에 복사
-                        navigator.clipboard.writeText(transcript).catch(function() {
-                            console.log('클립보드 복사 실패');
-                        });
+                        // 결과 표시
+                        document.getElementById('result-display').innerHTML = '<strong style="color: #000;">✅ "' + transcript + '"</strong>';
+                        document.getElementById('status').innerHTML = '<strong style="color: #28a745;">🔄 음성 인식 완료! 확인해주세요.</strong>';
+                        
+                        // prompt로 결과 확인 및 바로 처리
+                        const userInput = prompt('음성 인식 결과입니다. 수정이 필요하면 편집하고 확인을 눌러주세요:', transcript);
+                        if (userInput !== null && userInput.trim() !== '') {
+                            // 결과를 자동으로 입력창에 설정
+                            const inputElements = document.querySelectorAll('input[placeholder*="음성 인식 후"]');
+                            if (inputElements.length > 0) {
+                                inputElements[0].value = userInput.trim();
+                                inputElements[0].dispatchEvent(new Event('input', { bubbles: true }));
+                                inputElements[0].dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                            document.getElementById('status').innerHTML = '<strong style="color: #28a745;">✅ 처리 완료! 아래에 결과가 입력되었습니다.</strong>';
+                        } else {
+                            document.getElementById('status').innerHTML = '<strong>❌ 처리가 취소되었습니다.</strong>';
+                        }
                     };
                     
                     recognition.onerror = function(event) {
                         if (event.error === 'not-allowed') {
-                            document.getElementById('status').innerHTML = '<strong>❌ 마이크 권한을 허용해주세요</strong>';
+                            document.getElementById('status').innerHTML = '<strong style="color: #dc3545;">❌ 마이크 권한을 허용해주세요</strong>';
                         } else if (event.error === 'no-speech') {
-                            document.getElementById('status').innerHTML = '<strong>❌ 음성이 감지되지 않았습니다</strong>';
+                            document.getElementById('status').innerHTML = '<strong style="color: #dc3545;">❌ 음성이 감지되지 않았습니다</strong>';
                         } else {
-                            document.getElementById('status').innerHTML = '<strong>❌ 오류: ' + event.error + '</strong>';
+                            document.getElementById('status').innerHTML = '<strong style="color: #dc3545;">❌ 오류: ' + event.error + '</strong>';
                         }
                     };
                     
                     recognition.start();
                 } else {
-                    document.getElementById('status').innerHTML = '<strong>❌ 이 브라우저는 음성 인식을 지원하지 않습니다</strong>';
+                    document.getElementById('status').innerHTML = '<strong style="color: #dc3545;">❌ 이 브라우저는 음성 인식을 지원하지 않습니다</strong>';
                 }
-            }
-            
-            function copySpeechResult() {
-                const text = document.getElementById('speechResult').value;
-                navigator.clipboard.writeText(text).then(function() {
-                    alert('클립보드에 복사되었습니다! 아래 텍스트 입력창에 붙여넣어 주세요.');
-                });
             }
             
             // 자동 시작
@@ -493,26 +489,22 @@ def main():
             </script>
             """
             
-            st.components.v1.html(speech_html, height=200)
+            st.components.v1.html(speech_html, height=180)
             
-        # 음성 인식 결과를 받을 텍스트 입력
-        st.info("🎤 위에서 음성 인식이 완료되면 '📋 결과 복사하기' 버튼을 클릭하여 결과를 복사하고, 아래에 붙여넣어 주세요.")
+        # 음성 인식 결과 입력창 (간단하게)
+        st.info("💡 위에서 음성 인식이 완료되면 확인 창이 나타납니다. 확인 후 아래에 결과를 입력해주세요.")
         
-        # 사용자 입력 필드
-        recognized_text = st.text_input(
-            "음성 인식 결과를 붙여넣으세요:",
-            value=st.session_state.web_speech_result,
-            placeholder="위에서 인식된 텍스트를 복사해서 여기에 붙여넣으세요",
-            key="current_web_speech_input"
+        # 간단한 결과 입력 필드
+        user_input_text = st.text_input(
+            "음성 인식 결과:",
+            placeholder="음성 인식 후 여기에 결과를 입력하고 Enter를 누르세요",
+            key=f"simple_speech_input_{int(time.time()) % 1000}"
         )
         
-        # 결과가 입력되면 처리
-        if recognized_text and recognized_text.strip() and recognized_text != st.session_state.web_speech_result:
-            user_input = recognized_text.strip()
-            st.session_state.web_speech_result = ""  # 결과 초기화
-            st.session_state.is_recording = False    # 녹음 상태 종료
-            
-            # 자동 처리 실행
+        # 결과가 입력되면 바로 처리
+        if user_input_text and user_input_text.strip():
+            user_input = user_input_text.strip()
+            st.session_state.is_recording = False
             process_text_input(user_input, "음성")
             st.rerun()
         
