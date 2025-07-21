@@ -19,7 +19,91 @@ except Exception as e:
 
 # 웹 음성 인식용 (기존 전역 변수는 더 이상 사용하지 않음)
 
-
+def recognize_speech_with_interrupt():
+    """웹 음성 인식 (iPad Safari 호환) - 기존 함수 시그니처 유지"""
+    try:
+        # 웹 음성 인식 컴포넌트
+        speech_html = """
+        <div style="text-align: center; padding: 20px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff; margin: 10px 0;">
+            <p id="status" style="font-size: 18px; margin-bottom: 15px;"><strong>🎤 마이크 권한을 허용하고 말씀해주세요</strong></p>
+            <input type="text" id="speechResult" placeholder="인식된 텍스트가 여기에 나타납니다" 
+                   style="width: 80%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; text-align: center;" readonly>
+            <br><br>
+            <button onclick="copySpeechResult()" id="copyBtn" 
+                    style="background-color: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; display: none;">
+                📋 결과 복사하기
+            </button>
+        </div>
+        
+        <script>
+        function startSpeechRecognition() {
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'ko-KR';
+                
+                document.getElementById('status').innerHTML = '<strong>🎤 음성을 듣고 있습니다... 말씀하세요!</strong>';
+                
+                recognition.onresult = function(event) {
+                    const transcript = event.results[0][0].transcript;
+                    document.getElementById('speechResult').value = transcript;
+                    document.getElementById('status').innerHTML = '<strong>✅ 음성 인식 완료!</strong>';
+                    document.getElementById('copyBtn').style.display = 'inline-block';
+                    
+                    // 자동으로 클립보드에 복사
+                    navigator.clipboard.writeText(transcript).catch(function() {
+                        console.log('클립보드 복사 실패');
+                    });
+                };
+                
+                recognition.onerror = function(event) {
+                    if (event.error === 'not-allowed') {
+                        document.getElementById('status').innerHTML = '<strong>❌ 마이크 권한을 허용해주세요</strong>';
+                    } else if (event.error === 'no-speech') {
+                        document.getElementById('status').innerHTML = '<strong>❌ 음성이 감지되지 않았습니다</strong>';
+                    } else {
+                        document.getElementById('status').innerHTML = '<strong>❌ 오류: ' + event.error + '</strong>';
+                    }
+                };
+                
+                recognition.start();
+            } else {
+                document.getElementById('status').innerHTML = '<strong>❌ 이 브라우저는 음성 인식을 지원하지 않습니다</strong>';
+            }
+        }
+        
+        function copySpeechResult() {
+            const text = document.getElementById('speechResult').value;
+            navigator.clipboard.writeText(text).then(function() {
+                alert('클립보드에 복사되었습니다! 아래 텍스트 입력창에 붙여넣어 주세요.');
+            });
+        }
+        
+        // 자동 시작
+        setTimeout(startSpeechRecognition, 500);
+        </script>
+        """
+        
+        st.components.v1.html(speech_html, height=200)
+        
+        # 음성 인식 결과를 받을 텍스트 입력 (기존 플로우 유지용)
+        st.info("🎤 위에서 음성 인식이 완료되면 '📋 결과 복사하기' 버튼을 클릭하여 결과를 복사하고, 아래에 붙여넣어 주세요.")
+        
+        # 사용자 입력 필드
+        recognized_text = st.text_input(
+            "음성 인식 결과를 붙여넣으세요:",
+            placeholder="위에서 인식된 텍스트를 복사해서 여기에 붙여넣으세요",
+            key=f"web_speech_input_{int(time.time())}"
+        )
+        
+        if recognized_text and recognized_text.strip():
+            return recognized_text.strip()
+        else:
+            return "음성을 인식할 수 없습니다."
+            
+    except Exception as e:
+        return f"음성 인식 실패: {e}"
 
 def transcribe_audio_with_whisper(audio_bytes):
     """OpenAI Whisper를 사용하여 오디오를 텍스트로 변환 (iPad 호환)"""
@@ -237,8 +321,7 @@ def main():
         layout="wide"
     )
     
-    st.title("🎤 STT 교정 테스트")
-    st.markdown("**iPad 및 웹 환경 완벽 지원! 🚀**")
+    st.title("STT 교정 테스트")
 
     # 사이드바에 탭 기능 추가
     with st.sidebar:
@@ -387,7 +470,7 @@ def main():
                 st.markdown("- Excel (.xlsx) 또는 CSV 파일")
 
     # 음성 및 텍스트 입력
-    st.subheader("🎯 음성 및 텍스트 입력")
+    st.subheader("음성 및 텍스트 입력")
     
     # 세션 상태 초기화
     if 'recognized_text' not in st.session_state:
@@ -425,76 +508,7 @@ def main():
     # 녹음 중일 때 음성 인식 실행
     if st.session_state.is_recording:
         with st.spinner("🎤 음성을 인식하는 중... (1.5초 멈추면 자동 종료)"):
-            # 웹 음성 인식 컴포넌트 표시
-            speech_html = """
-            <div style="text-align: center; padding: 20px; border: 2px solid #1f77b4; border-radius: 10px; background-color: #f0f8ff; margin: 10px 0;">
-                <p id="status" style="font-size: 18px; margin-bottom: 15px;"><strong>🎤 마이크 권한을 허용하고 말씀해주세요</strong></p>
-                <input type="text" id="speechResult" placeholder="인식된 텍스트가 여기에 나타납니다" 
-                       style="width: 80%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; text-align: center;" readonly>
-                <br><br>
-                <button onclick="copySpeechResult()" id="copyBtn" 
-                        style="background-color: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; display: none;">
-                    📋 결과 복사하기
-                </button>
-            </div>
-            
-            <script>
-            function startSpeechRecognition() {
-                if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                    recognition.continuous = false;
-                    recognition.interimResults = false;
-                    recognition.lang = 'ko-KR';
-                    
-                    document.getElementById('status').innerHTML = '<strong>🎤 음성을 듣고 있습니다... 말씀하세요!</strong>';
-                    
-                    recognition.onresult = function(event) {
-                        const transcript = event.results[0][0].transcript;
-                        document.getElementById('speechResult').value = transcript;
-                        document.getElementById('status').innerHTML = '<strong>✅ 음성 인식 완료!</strong>';
-                        document.getElementById('copyBtn').style.display = 'inline-block';
-                        
-                        // 자동으로 클립보드에 복사
-                        navigator.clipboard.writeText(transcript).catch(function() {
-                            console.log('클립보드 복사 실패');
-                        });
-                    };
-                    
-                    recognition.onerror = function(event) {
-                        if (event.error === 'not-allowed') {
-                            document.getElementById('status').innerHTML = '<strong>❌ 마이크 권한을 허용해주세요</strong>';
-                        } else if (event.error === 'no-speech') {
-                            document.getElementById('status').innerHTML = '<strong>❌ 음성이 감지되지 않았습니다</strong>';
-                        } else {
-                            document.getElementById('status').innerHTML = '<strong>❌ 오류가 발생했습니다</strong>';
-                        }
-                    };
-                    
-                    recognition.start();
-                } else {
-                    document.getElementById('status').innerHTML = '<strong>❌ 이 브라우저는 음성 인식을 지원하지 않습니다</strong>';
-                }
-            }
-            
-            function copySpeechResult() {
-                const text = document.getElementById('speechResult').value;
-                navigator.clipboard.writeText(text).then(function() {
-                    alert('클립보드에 복사되었습니다! 아래 텍스트 입력창에 붙여넣어 주세요.');
-                });
-            }
-            
-            // 자동 시작
-            setTimeout(startSpeechRecognition, 500);
-            </script>
-            """
-            
-            st.components.v1.html(speech_html, height=200)
-            
-            # 사용자가 결과를 확인할 시간 제공
-            time.sleep(2)
-            
-            # 더미 결과 반환 (실제로는 음성 인식 불가)
-            user_input = "음성을 인식할 수 없습니다."
+            user_input = recognize_speech_with_interrupt()
             
         # 녹음 완료 후 처리
         st.session_state.is_recording = False
@@ -506,7 +520,7 @@ def main():
             if "중단되었습니다" in user_input:
                 st.info("🔴 녹음이 중단되었습니다.")
             else:
-                st.info("🎤 음성 인식 결과를 위에서 복사하여 아래 텍스트 입력창에 붙여넣어 주세요.")
+                st.warning(f"⚠️ {user_input}")
         
         st.rerun()  # 버튼 상태 업데이트
 
@@ -545,11 +559,6 @@ def main():
         with st.container():
             st.markdown("**🔤 입력받은 내용:**")
             st.info(st.session_state.recognized_text)
-            # 입력 방식 표시
-            if "웹" in str(st.session_state.get('debug_info', {}).get('처리 완료 시간', '')):
-                st.caption("🎤 웹 음성 인식으로 입력됨 (iPad 호환)")
-            else:
-                st.caption("✏️ 직접 텍스트 입력")
                 
         if st.session_state.get('corrected_text'):
             with st.container():
