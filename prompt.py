@@ -4,6 +4,13 @@ import openai
 import time
 import os
 
+# Streamlit 페이지 설정
+st.set_page_config(
+    page_title="STT 교정 테스트",
+    page_icon="🎤",
+    layout="wide"
+)
+
 # OpenAI API 키를 Streamlit Secrets에서 가져오기
 try:
     api_key = st.secrets["OPENAI_API_KEY"]
@@ -16,37 +23,6 @@ except KeyError:
 except Exception as e:
     st.error(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
     st.stop()
-
-# 웹 음성 인식용 (기존 전역 변수는 더 이상 사용하지 않음)
-
-
-
-def transcribe_audio_with_whisper(audio_bytes):
-    """OpenAI Whisper를 사용하여 오디오를 텍스트로 변환 (iPad 호환)"""
-    try:
-        # 임시 파일로 저장
-        with open("temp_audio.wav", "wb") as f:
-            f.write(audio_bytes)
-        
-        # Whisper API로 전사
-        with open("temp_audio.wav", "rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                language="ko"
-            )
-        
-        # 임시 파일 삭제
-        if os.path.exists("temp_audio.wav"):
-            os.remove("temp_audio.wav")
-        
-        return response.text
-    except Exception as e:
-        st.error(f"음성 인식 실패: {e}")
-        # 임시 파일 정리
-        if os.path.exists("temp_audio.wav"):
-            os.remove("temp_audio.wav")
-        return None
 
 def correct_transcription_with_prompt(user_input, system_prompt, user_prompt):
     """프롬프트를 사용하여 텍스트 교정"""
@@ -231,12 +207,6 @@ def edit_user_prompt():
             st.rerun()
 
 def main():
-    st.set_page_config(
-        page_title="STT 교정 테스트",
-        page_icon="🎤",
-        layout="wide"
-    )
-    
     st.title("STT 교정 테스트")
 
     # 페이지 로드시 localStorage에서 음성 인식 결과 확인 및 자동 처리
@@ -255,7 +225,7 @@ def main():
     
     st.components.v1.html(auto_check_html, height=1)
     
-    # 쿼리 파라미터에서 음성 인식 결과 확인하여 자동 처리
+    # 쿼리 파라미터에서 음성 인식 결과 확인하여 텍스트 입력창에 설정
     query_params = st.query_params
     if 'auto_speech_result' in query_params:
         speech_result = query_params['auto_speech_result']
@@ -263,8 +233,8 @@ def main():
             # 녹음 상태 종료
             st.session_state.is_recording = False
             
-            # 바로 자동 처리 실행 (원래 로직과 동일)
-            process_text_input(speech_result.strip(), "음성")
+            # 세션 상태에 STT 결과 저장 (텍스트 입력창에 표시하기 위함)
+            st.session_state.stt_result = speech_result.strip()
             
             # 쿼리 파라미터 제거하고 새로고침
             st.query_params.clear()
@@ -455,7 +425,7 @@ def main():
     # 녹음 중일 때 음성 인식 실행
     if st.session_state.is_recording:
         
-        with st.spinner("🎤 음성을 인식하는 중... (1.5초 멈추면 자동 종료)"):
+        with st.spinner("🎤 음성을 인식하는 중... (말을 끝내면 자동 종료됩니다)"):
             
             # 웹 음성 인식 컴포넌트 표시
             speech_html = """
@@ -518,23 +488,36 @@ def main():
             st.components.v1.html(speech_html, height=180)
             
         # 음성 인식 중 안내 메시지
-        st.info("🎤 음성 인식이 완료되면 자동으로 교정 및 번역 처리됩니다.")
+        st.info("🎤 음성 인식이 완료되면 아래 텍스트 입력창에 자동으로 입력됩니다. 그 후 '처리하기' 버튼을 눌러주세요.")
         
         # 녹음 중지 버튼 처리 (기존 로직)
         return  # 여기서 함수 종료하여 아래 로직 실행 안 함
 
-    # 텍스트 입력 부분 (음성 입력 아래에 추가)
-    st.markdown("#### ✏️ 또는 텍스트로 직접 입력하기")
+    # 텍스트 입력 부분
+    st.markdown("#### ✏️ 텍스트 입력")
+    
+    # STT 결과가 있으면 텍스트 입력창에 자동 설정
+    default_text = ""
+    input_method_flag = ""
+    
+    if 'stt_result' in st.session_state and st.session_state.stt_result:
+        default_text = st.session_state.stt_result
+        input_method_flag = "stt"
+        st.session_state.stt_result = ""  # 한번 사용 후 초기화
     
     # 텍스트 입력 필드
-    text_input = st.text_area("텍스트를 입력하세요:", 
+    text_input = st.text_area("음성으로 입력하거나 직접 텍스트를 입력하세요:", 
+                               value=default_text,
                                height=100,
-                               placeholder="예: 안녕하세요. 처리하기를 눌러주세요.")
+                               placeholder="STT로 음성 입력하거나 직접 텍스트를 입력한 후 '처리하기' 버튼을 눌러주세요.",
+                               key="main_text_input")
     
     # 처리하기 버튼
     if st.button("🔄 처리하기", key="text_input_button", use_container_width=True):
         if text_input.strip():
-            process_text_input(text_input.strip(), "텍스트")
+            # 입력 방식 판단 (STT로 자동 입력된 경우 vs 직접 입력)
+            input_type = "음성" if input_method_flag == "stt" else "텍스트"
+            process_text_input(text_input.strip(), input_type)
             st.rerun()
         else:
             st.warning("텍스트를 입력해주세요!")
