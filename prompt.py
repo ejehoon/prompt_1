@@ -524,7 +524,7 @@ def main():
     # 텍스트 입력 필드
     text_input = st.text_area("텍스트를 입력하세요:", 
                                height=100,
-                               placeholder="ex. 안녕하세요")
+                               placeholder="ex. 동피랑 벽화마을 가는 법 알려줘")
     
     # 처리하기 버튼
     if st.button("🔄 처리하기", key="text_input_button", use_container_width=True):
