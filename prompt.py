@@ -1,29 +1,21 @@
-
 import streamlit as st
 import pandas as pd
 import speech_recognition as sr
 import openai
 import threading
 import time
+import json
 
-# Streamlit 페이지 설정
-st.set_page_config(
-    page_title="STT 교정 테스트",
-    page_icon="🎤",
-    layout="wide"
-)
-
-# OpenAI API 키를 Streamlit Secrets에서 가져오기
+# OpenAI API 키를 Streamlit Secrets에서 안전하게 가져오기
 try:
     api_key = st.secrets["OPENAI_API_KEY"]
     client = openai.OpenAI(api_key=api_key)
 except KeyError:
-    st.error("⚠️ OPENAI_API_KEY가 Streamlit Secrets에 설정되지 않았습니다!")
-    st.info("Streamlit Cloud에서 App settings > Secrets에 다음과 같이 추가해주세요:")
-    st.code('OPENAI_API_KEY = "your-api-key-here"', language="toml")
+    st.error("🔑 OpenAI API 키가 설정되지 않았습니다. Streamlit Secrets에 'OPENAI_API_KEY'를 추가해주세요.")
+    st.info("💡 **설정 방법:**\n1. Streamlit Cloud 대시보드에서 앱 설정으로 이동\n2. Secrets 탭에서 다음과 같이 추가:\n```\nOPENAI_API_KEY = \"your-api-key-here\"\n```")
     st.stop()
 except Exception as e:
-    st.error(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
+    st.error(f"API 키 설정 중 오류 발생: {e}")
     st.stop()
 
 # 전역 변수로 녹음 상태 관리
@@ -274,6 +266,52 @@ def edit_user_prompt():
         if st.button("❌ 취소", use_container_width=True):
             st.rerun()
 
+@st.dialog("System Prompt (JSON 뷰)", width="large")
+def show_system_prompt_json():
+    st.markdown("### 🤖 System Prompt - JSON 형식")
+    
+    try:
+        # JSON 파싱 시도
+        parsed_json = json.loads(st.session_state.saved_system_prompt)
+        st.json(parsed_json)
+    except json.JSONDecodeError:
+        # JSON이 아닌 경우 일반 텍스트로 표시하되 JSON 형식으로 보이도록 시도
+        try:
+            # 문자열 내의 이스케이프 문자를 실제 문자로 변환
+            formatted_text = st.session_state.saved_system_prompt.replace('\\n', '\n').replace('\\t', '\t')
+            st.code(formatted_text, language="json")
+        except:
+            st.text_area(
+                "프롬프트 내용 (JSON 파싱 실패)",
+                value=st.session_state.saved_system_prompt,
+                height=400,
+                disabled=True,
+                label_visibility="collapsed"
+            )
+
+@st.dialog("User Prompt Template (JSON 뷰)", width="large")
+def show_user_prompt_json():
+    st.markdown("### 👤 User Prompt Template - JSON 형식")
+    
+    try:
+        # JSON 파싱 시도
+        parsed_json = json.loads(st.session_state.saved_user_prompt_template)
+        st.json(parsed_json)
+    except json.JSONDecodeError:
+        # JSON이 아닌 경우 일반 텍스트로 표시하되 JSON 형식으로 보이도록 시도
+        try:
+            # 문자열 내의 이스케이프 문자를 실제 문자로 변환
+            formatted_text = st.session_state.saved_user_prompt_template.replace('\\n', '\n').replace('\\t', '\t')
+            st.code(formatted_text, language="json")
+        except:
+            st.text_area(
+                "프롬프트 내용 (JSON 파싱 실패)",
+                value=st.session_state.saved_user_prompt_template,
+                height=400,
+                disabled=True,
+                label_visibility="collapsed"
+            )
+
 def main():
     st.title("STT 교정 테스트")
 
@@ -286,9 +324,9 @@ def main():
         
         # 세션 상태 초기화
         if 'saved_system_prompt' not in st.session_state:
-            st.session_state.saved_system_prompt = "You are a meticulous proofreader for the Incheon Main Customs Office. Your task is to correct spelling and transcription errors in Korean text. Return ONLY the corrected Korean text without any explanations, comments, or additional text."
+            st.session_state.saved_system_prompt = "test"
         if 'saved_user_prompt_template' not in st.session_state:
-            st.session_state.saved_user_prompt_template = "Please correct any spelling or transcription errors in this Korean text: {transcription}"
+            st.session_state.saved_user_prompt_template = "{transcription}"
         
         # 프롬프트 설정 탭
         with tab1:
@@ -332,13 +370,13 @@ def main():
                     st.success("✅ 저장됨")
             
             with col2:
-                if st.button("🔄 초기화", key="reset_prompt", use_container_width=True):
+                if st.button("예시", key="reset_prompt", use_container_width=True):
                     st.session_state.saved_system_prompt = "You are a **meticulous proofreader** working for the **{{주제}}**.\n\n## ROLE\nYour task is to correct transcription errors in text produced by a speech-to-text (STT) system. Your most important duty is to detect and correct misrecognized words related to {{주제}}, including both proper nouns and common nouns.\n\n## CORRECTION RULES\n- Correct spelling, spacing, capitalization, and punctuation errors.\n- Always produce corrections in **the same language as the original input**. For example:\n    - If the text is in Korean, correct it in Korean.\n    - If the text is in English, correct it in English.\n    - If the text is in Chinese, correct it in Chinese.\n- For all words, including proper nouns and general vocabulary, fix typos or misrecognized words.\n- For proper nouns, perform fuzzy matching:\n    - If a transcription contains a word similar in spelling or pronunciation to any proper noun in the list below, replace it with the correct spelling, converted to the script or phonetic transcription used in the output language.\n\n- For Korean proper nouns:\n    - Always correct proper nouns to the standard spelling, then transcribe them using the script or phonetic convention typically used in the output language for foreign names, unless there is an official or widely accepted translation.\n    - Never leave proper nouns in Hangul in non-Korean texts.\n    - Examples:\n        - Use Latin letters (romanization) in English, Spanish, French, German, Italian, Portuguese, Indonesian, Dutch, Finnish, Croatian, Czech, Slovak, Polish, Hungarian, Swedish, Malay, Turkish, Tagalog, Swahili, Uzbek.\n        - Use Katakana in Japanese (e.g. ハンサンド).\n        - Use Hanzi (Chinese characters) or pinyin in Chinese (Simplified, Traditional, Cantonese) if widely accepted.\n        - Use local phonetic script in languages such as Thai, Arabic, Russian, Greek, Hebrew, Hindi, Mongolian, Persian, Ukrainian.\n        - Use Hangul in Korean.\n- Do NOT answer any questions.\n- Do NOT explain corrections.\n- Do NOT rephrase or simplify sentences.\n- Only perform necessary corrections as defined above.\n\n## PROPER NOUN LIST (STANDARD FORMS ONLY)\n{{고유단어리스트}}"
                     st.session_state.saved_user_prompt_template = "You are a meticulous proofreader for {{주제}}.\n\n## TASK\nYour only task is to correct spelling, transcription, spacing, punctuation, or typographical errors in the given text.\n\n- The input text may contain Korean, English, Chinese, Japanese, or other languages, or a mixture of them.\n- Keep the text in its original language. Do NOT translate the entire text into another language.\n- However, for Korean proper nouns:\n    - Correct them to their official spelling from the provided proper noun list.\n    - Then transcribe them using the writing system or phonetic convention typically used in the output language for foreign names, unless there is an official or widely accepted translation.\n    - Never leave proper nouns in Hangul in non-Korean texts.\n- For all other words, correct only obvious spelling or transcription mistakes.\n- Do NOT answer questions or explain corrections.\n- Do NOT paraphrase or simplify sentences.\n\n## Origin Transcription:\n{transcription}\n\n## Corrected Transcription:"
                     st.rerun()
             
             # 현재 프롬프트 미리보기
-            st.markdown("#### 📋 현재 프롬프트")
+            st.markdown("#### 📋 JSON View")
             
             # System Prompt 
             col1, col2 = st.columns([4, 1])
@@ -347,8 +385,8 @@ def main():
                 st.text(st.session_state.saved_system_prompt[:50] + "..." if len(st.session_state.saved_system_prompt) > 50 else st.session_state.saved_system_prompt)
             
             with col2:
-                if st.button("🔍", key="show_system", help="System Prompt 전체보기"):
-                    show_system_prompt()
+                if st.button("📋", key="show_system_json", help="JSON 형식으로 보기"):
+                    show_system_prompt_json()
             
             st.markdown("---")
             
@@ -359,8 +397,8 @@ def main():
                 st.text(st.session_state.saved_user_prompt_template[:50] + "..." if len(st.session_state.saved_user_prompt_template) > 50 else st.session_state.saved_user_prompt_template)
             
             with col2:
-                if st.button("🔍", key="show_user", help="User Prompt 전체보기"):
-                    show_user_prompt()
+                if st.button("📋", key="show_user_json", help="JSON 형식으로 보기"):
+                    show_user_prompt_json()
         
         # TM 설정 탭
         with tab2:
@@ -481,12 +519,12 @@ def main():
         st.rerun()  # 버튼 상태 업데이트
 
     # 텍스트 입력 부분 (음성 입력 아래에 추가)
-    st.markdown("#### ✏️ 또는 텍스트로 직접 입력하기")
+    st.markdown("#### 텍스트로 직접 입력하기")
     
     # 텍스트 입력 필드
     text_input = st.text_area("텍스트를 입력하세요:", 
                                height=100,
-                               placeholder="예: 안녕하세요. 처리하기를 눌러주세요.")
+                               placeholder="ex. 안녕하세요")
     
     # 처리하기 버튼
     if st.button("🔄 처리하기", key="text_input_button", use_container_width=True):
