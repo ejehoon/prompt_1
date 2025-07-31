@@ -568,6 +568,7 @@ def main():
                 else:
                     # TM이 적용되지 않은 경우
                     st.info("TM 적용되지 않음")
+                    st.success(st.session_state.corrected_text)
                 
         if st.session_state.get('translated_text'):
             with st.container():
