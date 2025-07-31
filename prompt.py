@@ -559,10 +559,15 @@ def main():
                 st.markdown("**🔍 검수:**")
                 st.success(st.session_state.corrected_text)
             
-        if st.session_state.get('tm_corrected_text') and st.session_state.corrected_text != st.session_state.tm_corrected_text:
+        if st.session_state.get('tm_corrected_text'):
             with st.container():
                 st.markdown("**📊 TM 교정:**")
-                st.success(st.session_state.tm_corrected_text)
+                if st.session_state.corrected_text != st.session_state.tm_corrected_text:
+                    # TM이 적용된 경우
+                    st.success(st.session_state.tm_corrected_text)
+                else:
+                    # TM이 적용되지 않은 경우
+                    st.info(f"TM 적용되지 않음: {st.session_state.corrected_text}")
                 
         if st.session_state.get('translated_text'):
             with st.container():
