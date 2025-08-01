@@ -313,20 +313,34 @@ def show_user_prompt_json():
             )
 
 def main():
-    st.title("STT 교정 테스트")
+    # 모드에 따라 제목 변경
+    if st.session_state.get('app_mode', 'stt') == "evaluate":
+        st.title("🧪 프롬프트 평가 대시보드")
+    else:
+        st.title("STT 교정 테스트")
 
     # 사이드바에 탭 기능 추가
     with st.sidebar:
         st.markdown("### ⚙️ 설정")
         
         # 탭 생성
-        tab1, tab2 = st.tabs(["📝 프롬프트", "📊 TM"])
+        tab1, tab2, tab3 = st.tabs(["📝 프롬프트", "📊 TM", "🧪 평가하기"])
         
         # 세션 상태 초기화
+        if 'app_mode' not in st.session_state:
+            st.session_state.app_mode = "stt"  # "stt" 또는 "evaluate"
         if 'saved_system_prompt' not in st.session_state:
-            st.session_state.saved_system_prompt = "You are a **meticulous proofreader** working for the **{{주제}}**.\n\n## ROLE\nYour task is to correct transcription errors in text produced by a speech-to-text (STT) system. Your most important duty is to detect and correct misrecognized words related to {{주제}}, including both proper nouns and common nouns.\n\n## CORRECTION RULES\n- Correct spelling, spacing, capitalization, and punctuation errors.\n- Always produce corrections in **the same language as the original input**. For example:\n    - If the text is in Korean, correct it in Korean.\n    - If the text is in English, correct it in English.\n    - If the text is in Chinese, correct it in Chinese.\n- For all words, including proper nouns and general vocabulary, fix typos or misrecognized words.\n- For proper nouns, perform fuzzy matching:\n    - If a transcription contains a word similar in spelling or pronunciation to any proper noun in the list below, replace it with the correct spelling, converted to the script or phonetic transcription used in the output language.\n\n- For Korean proper nouns:\n    - Always correct proper nouns to the standard spelling, then transcribe them using the script or phonetic convention typically used in the output language for foreign names, unless there is an official or widely accepted translation.\n    - Never leave proper nouns in Hangul in non-Korean texts.\n    - Examples:\n        - Use Latin letters (romanization) in English, Spanish, French, German, Italian, Portuguese, Indonesian, Dutch, Finnish, Croatian, Czech, Slovak, Polish, Hungarian, Swedish, Malay, Turkish, Tagalog, Swahili, Uzbek.\n        - Use Katakana in Japanese (e.g. ハンサンド).\n        - Use Hanzi (Chinese characters) or pinyin in Chinese (Simplified, Traditional, Cantonese) if widely accepted.\n        - Use local phonetic script in languages such as Thai, Arabic, Russian, Greek, Hebrew, Hindi, Mongolian, Persian, Ukrainian.\n        - Use Hangul in Korean.\n- Do NOT answer any questions.\n- Do NOT explain corrections.\n- Do NOT rephrase or simplify sentences.\n- Only perform necessary corrections as defined above.\n\n## PROPER NOUN LIST (STANDARD FORMS ONLY)\n{{고유단어리스트}}"
+            st.session_state.saved_system_prompt = "test"
         if 'saved_user_prompt_template' not in st.session_state:
             st.session_state.saved_user_prompt_template = "You are a meticulous proofreader for {{주제}}.\n\n## TASK\nYour only task is to correct spelling, transcription, spacing, punctuation, or typographical errors in the given text.\n\n- The input text may contain Korean, English, Chinese, Japanese, or other languages, or a mixture of them.\n- Keep the text in its original language. Do NOT translate the entire text into another language.\n- However, for Korean proper nouns:\n    - Correct them to their official spelling from the provided proper noun list.\n    - Then transcribe them using the writing system or phonetic convention typically used in the output language for foreign names, unless there is an official or widely accepted translation.\n    - Never leave proper nouns in Hangul in non-Korean texts.\n- For all other words, correct only obvious spelling or transcription mistakes.\n- Do NOT answer questions or explain corrections.\n- Do NOT paraphrase or simplify sentences.\n\n## Origin Transcription:\n{transcription}\n\n## Corrected Transcription:"
+        
+        # 평가 모드 관련 세션 상태 초기화
+        if 'test_cases' not in st.session_state:
+            st.session_state.test_cases = []
+        if 'prompt_variables' not in st.session_state:
+            st.session_state.prompt_variables = {}
+        if 'evaluation_prompt' not in st.session_state:
+            st.session_state.evaluation_prompt = ""
         
         # 프롬프트 설정 탭
         with tab1:
@@ -460,7 +474,49 @@ def main():
                 st.markdown("---")
                 st.markdown("**TM 파일 형식 안내:**")
                 st.markdown("- Excel (.xlsx) 또는 CSV 파일")
+        
+        # 평가하기 탭
+        with tab3:
+            st.markdown("#### 🧪 프롬프트 평가")
+            st.markdown("프롬프트를 체계적으로 테스트하고 평가할 수 있습니다.")
+            
+            # 모드 전환 버튼
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🧪 평가 모드로 전환", key="switch_to_evaluate", use_container_width=True):
+                    st.session_state.app_mode = "evaluate"
+                    st.success("평가 모드로 전환되었습니다!")
+                    st.rerun()
+            
+            with col2:
+                if st.button("🎤 STT 모드로 돌아가기", key="switch_to_stt", use_container_width=True):
+                    st.session_state.app_mode = "stt"
+                    st.success("STT 모드로 전환되었습니다!")
+                    st.rerun()
+            
+            # 현재 모드 표시
+            if st.session_state.app_mode == "evaluate":
+                st.info("🔄 현재 평가 모드 활성화")
+            else:
+                st.info("🔄 현재 STT 모드 활성화")
+            
+            st.markdown("---")
+            
+            # 평가 모드 설명
+            st.markdown("**📋 평가 모드 기능:**")
+            st.markdown("- 📝 프롬프트 변수 관리")
+            st.markdown("- 🧪 테스트 케이스 생성 및 관리") 
+            st.markdown("- 🏃‍♂️ 일괄 테스트 실행")
+            st.markdown("- 📊 결과 비교 및 분석")
 
+    # 모드에 따라 다른 메인 화면 표시
+    if st.session_state.app_mode == "stt":
+        show_stt_interface()
+    else:
+        show_evaluation_interface()
+
+def show_stt_interface():
+    """STT 모드 인터페이스"""
     # 음성 및 텍스트 입력
     st.subheader("음성 및 텍스트 입력")
     
@@ -574,6 +630,210 @@ def main():
             with st.container():
                 st.markdown("**🌐 번역:**")
                 st.success(st.session_state.translated_text)
+
+def show_evaluation_interface():
+    """평가 모드 인터페이스 - 클로드 프롬프트 평가기 스타일"""
+    st.subheader("🧪 프롬프트 평가 및 테스트")
+    
+    # 상단 컨트롤 패널
+    col1, col2, col3 = st.columns([2, 2, 1])
+    
+    with col1:
+        st.markdown("**📝 평가할 프롬프트**")
+        evaluation_prompt = st.text_area(
+            "프롬프트를 입력하세요 (변수는 {{변수명}} 형식으로 사용):",
+            value=st.session_state.evaluation_prompt,
+            height=100,
+            placeholder="예: 다음 텍스트를 {{언어}}로 번역해주세요: {{텍스트}}"
+        )
+        st.session_state.evaluation_prompt = evaluation_prompt
+    
+    with col2:
+        st.markdown("**⚙️ 변수 관리**")
+        # 새 변수 추가
+        new_var_name = st.text_input("새 변수명:", placeholder="예: 언어", key="new_var_name")
+        new_var_value = st.text_input("기본값:", placeholder="예: 영어", key="new_var_value")
+        
+        if st.button("➕ 변수 추가", key="add_variable"):
+            if new_var_name and new_var_value:
+                st.session_state.prompt_variables[new_var_name] = new_var_value
+                st.success(f"변수 '{new_var_name}' 추가됨!")
+                st.rerun()
+            else:
+                st.warning("변수명과 기본값을 모두 입력해주세요.")
+    
+    with col3:
+        st.markdown("**🚀 액션**")
+        if st.button("➕ 새 테스트 케이스", key="add_test_case_btn", use_container_width=True):
+            # 기본 테스트 케이스 추가
+            if st.session_state.prompt_variables:
+                test_case = {
+                    "name": f"테스트 {len(st.session_state.test_cases) + 1}",
+                    "variables": {k: v for k, v in st.session_state.prompt_variables.items()},
+                    "expected": "",
+                    "result": None
+                }
+                st.session_state.test_cases.append(test_case)
+                st.success("새 테스트 케이스 추가됨!")
+                st.rerun()
+            else:
+                st.warning("먼저 변수를 추가해주세요.")
+    
+    # 테이블 형태의 테스트 케이스 표시
+    if st.session_state.test_cases:
+        st.markdown("### 📊 테스트 케이스 테이블")
+        
+        # 테이블 헤더 생성
+        if st.session_state.prompt_variables:
+            # 변수 컬럼들
+            var_columns = list(st.session_state.prompt_variables.keys())
+            
+            # 테이블 데이터 준비
+            table_data = []
+            for i, test_case in enumerate(st.session_state.test_cases):
+                row = {
+                    "테스트 케이스": test_case['name'],
+                    "예상 결과": test_case.get('expected', ''),
+                    "실행 결과": test_case.get('result', ''),
+                    "상태": "✅ 완료" if test_case.get('result') else "⏳ 대기"
+                }
+                
+                # 변수 값들 추가
+                for var_name in var_columns:
+                    row[var_name] = test_case['variables'].get(var_name, '')
+                
+                table_data.append(row)
+            
+            # DataFrame으로 변환하여 표시
+            df = pd.DataFrame(table_data)
+            st.dataframe(df, use_container_width=True)
+            
+            # 테이블 아래 액션 버튼들
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("🏃‍♂️ 모든 테스트 실행", key="run_all_tests", use_container_width=True):
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for i, test_case in enumerate(st.session_state.test_cases):
+                        status_text.text(f"테스트 '{test_case['name']}' 실행 중...")
+                        
+                        # 프롬프트에 변수 적용
+                        filled_prompt = st.session_state.evaluation_prompt
+                        for var_name, var_value in test_case['variables'].items():
+                            filled_prompt = filled_prompt.replace(f"{{{{{var_name}}}}}", var_value)
+                        
+                        try:
+                            response = client.chat.completions.create(
+                                model="gpt-4o",
+                                messages=[
+                                    {"role": "user", "content": filled_prompt}
+                                ],
+                                max_tokens=500,
+                                temperature=0.3
+                            )
+                            result = response.choices[0].message.content.strip()
+                            st.session_state.test_cases[i]['result'] = result
+                        except Exception as e:
+                            st.session_state.test_cases[i]['result'] = f"오류: {e}"
+                        
+                        progress_bar.progress((i + 1) / len(st.session_state.test_cases))
+                    
+                    status_text.text("모든 테스트 완료!")
+                    st.success("🎉 모든 테스트가 완료되었습니다!")
+                    st.rerun()
+            
+            with col2:
+                if st.button("📊 결과 내보내기", key="export_results", use_container_width=True):
+                    # CSV로 내보내기
+                    export_df = pd.DataFrame(table_data)
+                    csv = export_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 CSV 다운로드",
+                        data=csv,
+                        file_name="prompt_evaluation_results.csv",
+                        mime="text/csv"
+                    )
+            
+            with col3:
+                if st.button("🗑️ 모든 테스트 삭제", key="clear_all_tests", use_container_width=True):
+                    st.session_state.test_cases = []
+                    st.success("모든 테스트 케이스가 삭제되었습니다!")
+                    st.rerun()
+            
+            # 개별 테스트 케이스 관리
+            st.markdown("### 📝 개별 테스트 케이스 관리")
+            for i, test_case in enumerate(st.session_state.test_cases):
+                with st.expander(f"📋 {test_case['name']}"):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        # 테스트 케이스 이름 수정
+                        new_name = st.text_input(
+                            "테스트 케이스 이름:",
+                            value=test_case['name'],
+                            key=f"test_name_{i}"
+                        )
+                        if new_name != test_case['name']:
+                            st.session_state.test_cases[i]['name'] = new_name
+                        
+                        # 변수 값들 수정
+                        st.markdown("**변수 값들:**")
+                        for var_name in st.session_state.prompt_variables.keys():
+                            new_value = st.text_input(
+                                f"{var_name}:",
+                                value=test_case['variables'].get(var_name, ''),
+                                key=f"test_var_{i}_{var_name}"
+                            )
+                            if new_value != test_case['variables'].get(var_name, ''):
+                                st.session_state.test_cases[i]['variables'][var_name] = new_value
+                        
+                        # 예상 결과 수정
+                        expected = st.text_area(
+                            "예상 결과:",
+                            value=test_case.get('expected', ''),
+                            key=f"test_expected_{i}",
+                            height=60
+                        )
+                        if expected != test_case.get('expected', ''):
+                            st.session_state.test_cases[i]['expected'] = expected
+                    
+                    with col2:
+                        # 개별 실행 버튼
+                        if st.button("🏃‍♂️ 실행", key=f"run_test_{i}"):
+                            # 프롬프트에 변수 적용
+                            filled_prompt = st.session_state.evaluation_prompt
+                            for var_name, var_value in test_case['variables'].items():
+                                filled_prompt = filled_prompt.replace(f"{{{{{var_name}}}}}", var_value)
+                            
+                            # AI 호출
+                            try:
+                                response = client.chat.completions.create(
+                                    model="gpt-4o",
+                                    messages=[
+                                        {"role": "user", "content": filled_prompt}
+                                    ],
+                                    max_tokens=500,
+                                    temperature=0.3
+                                )
+                                result = response.choices[0].message.content.strip()
+                                st.session_state.test_cases[i]['result'] = result
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"테스트 실행 실패: {e}")
+                        
+                        # 삭제 버튼
+                        if st.button("🗑️ 삭제", key=f"del_test_{i}"):
+                            st.session_state.test_cases.pop(i)
+                            st.rerun()
+                    
+                    # 실행 결과 표시
+                    if test_case.get('result'):
+                        st.markdown("**실행 결과:**")
+                        st.success(test_case['result'])
+    else:
+        st.info("아직 테스트 케이스가 없습니다. 변수를 추가하고 '새 테스트 케이스' 버튼을 클릭해보세요!")
 
 
 if __name__ == "__main__":
